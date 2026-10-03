@@ -1,0 +1,13 @@
+# Local PostgreSQL for development:  docker compose -f database/docker-compose.yml up -d
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: smart_campus
+    ports: ["5432:5432"]
+    volumes: [smart_campus_data:/var/lib/postgresql/data]
+volumes:
+  smart_campus_data:

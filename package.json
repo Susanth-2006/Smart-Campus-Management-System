@@ -1,0 +1,9 @@
+{
+  "name": "smart-campus",
+  "private": true,
+  "scripts": {
+    "test": "tsx tests/logic.test.ts",
+    "typecheck": "npm --prefix backend run build && npm --prefix frontend run build"
+  },
+  "devDependencies": { "tsx": "^4.16.0", "@types/node": "^20.14.0" }
+}

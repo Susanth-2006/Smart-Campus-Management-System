@@ -1,0 +1,418 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STUDENT
+  FACULTY
+  ADMIN
+  STAFF
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum ComplaintCategory {
+  INFRASTRUCTURE
+  ELECTRICITY
+  WATER
+  INTERNET
+  CLASSROOM
+  LABORATORY
+  LIBRARY
+  HOSTEL
+  TRANSPORT
+  OTHER
+}
+
+enum ComplaintStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  ASSIGNED
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum TaskStatus {
+  PENDING
+  ACCEPTED
+  IN_PROGRESS
+  DONE
+}
+
+enum AnnouncementCategory {
+  ACADEMIC
+  EVENTS
+  CAMPUS
+  EMERGENCY
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role
+  phone        String?
+  avatarUrl    String?
+  createdAt    DateTime @default(now())
+
+  student       Student?
+  faculty       Faculty?
+  admin         Admin?
+  staff         CampusStaff?
+  notifications Notification[]
+  events        ComplaintEvent[]
+  reads         AnnouncementRead[]
+  loans         BookLoan[]
+  transportPass TransportPass?
+  materials     Material[]
+}
+
+model Department {
+  id   String @id @default(uuid())
+  code String @unique
+  name String @unique
+
+  students Student[]
+  faculty  Faculty[]
+  courses  Course[]
+}
+
+model Student {
+  id           String @id @default(uuid())
+  userId       String @unique
+  rollNo       String @unique
+  departmentId String
+  semester     Int
+  section      String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department   Department @relation(fields: [departmentId], references: [id])
+
+  enrollments Enrollment[]
+  attendance  Attendance[]
+  marks       Marks[]
+  complaints  Complaint[]
+}
+
+model Faculty {
+  id           String @id @default(uuid())
+  userId       String @unique
+  departmentId String
+  designation  String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department   Department @relation(fields: [departmentId], references: [id])
+
+  courses Course[]
+}
+
+model Admin {
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  announcements Announcement[]
+}
+
+model CampusStaff {
+  id        String @id @default(uuid())
+  userId    String @unique
+  staffType String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tasks MaintenanceTask[]
+}
+
+model Course {
+  id           String  @id @default(uuid())
+  code         String  @unique
+  name         String
+  description  String?
+  credits      Int
+  semester     Int
+  room         String
+  departmentId String
+  facultyId    String
+  department   Department @relation(fields: [departmentId], references: [id])
+  faculty      Faculty    @relation(fields: [facultyId], references: [id])
+
+  enrollments Enrollment[]
+  attendance  Attendance[]
+  marks       Marks[]
+  timetable   Timetable[]
+  materials   Material[]
+}
+
+model Enrollment {
+  id        String @id @default(uuid())
+  studentId String
+  courseId  String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  course    Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, courseId])
+}
+
+model Attendance {
+  id        String           @id @default(uuid())
+  studentId String
+  courseId  String
+  date      DateTime         @db.Date
+  status    AttendanceStatus
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  course    Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, courseId, date])
+  @@index([courseId, date])
+}
+
+model Marks {
+  id         String   @id @default(uuid())
+  studentId  String
+  courseId   String
+  internal   Float?
+  assignment Float?
+  midExam    Float?
+  finalExam  Float?
+  total      Float    @default(0)
+  grade      String?
+  published  Boolean  @default(false)
+  updatedAt  DateTime @updatedAt
+  student    Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  course     Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, courseId])
+}
+
+model Timetable {
+  id        String @id @default(uuid())
+  courseId  String
+  dayOfWeek Int // 1 = Monday ... 5 = Friday
+  startTime String // "09:00"
+  endTime   String // "10:00"
+  room      String
+  section   String @default("ALL")
+  course    Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([dayOfWeek])
+}
+
+model Complaint {
+  id          String            @id @default(uuid())
+  ticketNo    Int               @unique @default(autoincrement())
+  title       String
+  description String
+  category    ComplaintCategory
+  location    String
+  priority    Priority          @default(MEDIUM)
+  status      ComplaintStatus   @default(SUBMITTED)
+  imageUrl    String?
+  studentId   String
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  student     Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  events ComplaintEvent[]
+  task   MaintenanceTask?
+
+  @@index([status])
+}
+
+model ComplaintEvent {
+  id          String          @id @default(uuid())
+  complaintId String
+  status      ComplaintStatus
+  note        String?
+  actorId     String?
+  createdAt   DateTime        @default(now())
+  complaint   Complaint       @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  actor       User?           @relation(fields: [actorId], references: [id])
+}
+
+model MaintenanceTask {
+  id          String      @id @default(uuid())
+  complaintId String      @unique
+  staffId     String
+  status      TaskStatus  @default(PENDING)
+  notes       String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  complaint   Complaint   @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  staff       CampusStaff @relation(fields: [staffId], references: [id])
+}
+
+model Announcement {
+  id        String               @id @default(uuid())
+  title     String
+  body      String
+  category  AnnouncementCategory
+  priority  Priority             @default(MEDIUM)
+  audience  Role[]
+  authorId  String
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+  author    Admin                @relation(fields: [authorId], references: [id])
+
+  reads AnnouncementRead[]
+}
+
+model AnnouncementRead {
+  id             String       @id @default(uuid())
+  announcementId String
+  userId         String
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([announcementId, userId])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String
+  title     String
+  message   String
+  link      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+}
+
+enum FacilityCategory {
+  ACADEMIC
+  LAB
+  LIBRARY
+  SPORTS
+  FOOD
+  HOSTEL
+  ADMIN
+  MEDICAL
+  OTHER
+}
+
+enum CalendarEventType {
+  HOLIDAY
+  EXAM
+  DEADLINE
+  EVENT
+  CLASS
+}
+
+model Facility {
+  id          String           @id @default(uuid())
+  name        String
+  category    FacilityCategory
+  building    String
+  floor       String?
+  description String
+  hours       String
+  capacity    Int?
+  mapX        Float // 0-100, percent across the campus map
+  mapY        Float // 0-100, percent down the campus map
+}
+
+model Book {
+  id        String  @id @default(uuid())
+  title     String
+  author    String
+  category  String
+  isbn      String? @unique
+  copies    Int
+  available Int
+  loans     BookLoan[]
+
+  @@index([category])
+}
+
+model BookLoan {
+  id         String    @id @default(uuid())
+  bookId     String
+  userId     String
+  issuedAt   DateTime  @default(now())
+  dueAt      DateTime
+  returnedAt DateTime?
+  book       Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, returnedAt])
+}
+
+model TransportRoute {
+  id          String @id @default(uuid())
+  number      String @unique
+  name        String
+  vehicleNo   String
+  driverName  String
+  driverPhone String
+  capacity    Int
+  stops       RouteStop[]
+  passes      TransportPass[]
+}
+
+model RouteStop {
+  id         String         @id @default(uuid())
+  routeId    String
+  name       String
+  order      Int
+  pickupTime String // "07:15"
+  route      TransportRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  passes     TransportPass[]
+
+  @@unique([routeId, order])
+}
+
+model TransportPass {
+  id      String         @id @default(uuid())
+  userId  String         @unique
+  routeId String
+  stopId  String
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  route   TransportRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  stop    RouteStop      @relation(fields: [stopId], references: [id], onDelete: Cascade)
+}
+
+model CalendarEvent {
+  id          String            @id @default(uuid())
+  title       String
+  type        CalendarEventType
+  startDate   DateTime          @db.Date
+  endDate     DateTime          @db.Date
+  description String?
+  createdAt   DateTime          @default(now())
+
+  @@index([startDate])
+}
+
+model Material {
+  id           String   @id @default(uuid())
+  courseId     String
+  title        String
+  fileName     String
+  storedName   String
+  mimeType     String
+  size         Int
+  uploadedById String
+  createdAt    DateTime @default(now())
+  course       Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
+
+  @@index([courseId])
+}
