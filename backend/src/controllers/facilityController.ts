@@ -1,4 +1,4 @@
-import { FacilityCategory } from '@prisma/client';
+import { FacilityCategory } from '../generated/prisma/client';
 import { asyncHandler } from '../utils/errors';
 import { prisma } from '../utils/prisma';
 import { oneOf, textParam } from '../utils/query';

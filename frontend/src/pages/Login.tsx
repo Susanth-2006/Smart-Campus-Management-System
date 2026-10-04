@@ -12,6 +12,10 @@ const DEMOS: { label: string; role: Role; email: string }[] = [
   { label: 'Staff Demo', role: 'STAFF', email: 'staff@smartcampus.com' },
 ];
 
+// One-click demo accounts. Set VITE_DEMO_LOGINS=false to hide them (private deployments); VITE_DEMO_PASSWORD must match the backend's SEED_PASSWORD.
+const SHOW_DEMOS = import.meta.env.VITE_DEMO_LOGINS !== 'false';
+const DEMO_PASSWORD: string = import.meta.env.VITE_DEMO_PASSWORD ?? 'Password@123';
+
 export default function Login() {
   const { user, login } = useAuth();
   const nav = useNavigate();
@@ -67,14 +71,14 @@ export default function Login() {
             <button type="button" className="w-full text-center text-sm text-clay hover:underline">Forgot Password</button>
           </form>
 
-          <div className="mt-6 border-t border-line pt-4">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate">Development demo accounts</p>
+          {SHOW_DEMOS && <div className="mt-6 border-t border-line pt-4">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate">Demo accounts</p>
             <div className="grid grid-cols-2 gap-2">
               {DEMOS.map((d) => (
-                <button key={d.role} disabled={busy} onClick={() => submit(undefined, { email: d.email, password: 'Password@123', role: d.role })} className="btn-ghost !px-3 !py-2 text-xs">{d.label}</button>
+                <button key={d.role} disabled={busy} onClick={() => submit(undefined, { email: d.email, password: DEMO_PASSWORD, role: d.role })} className="btn-ghost !px-3 !py-2 text-xs">{d.label}</button>
               ))}
             </div>
-          </div>
+          </div>}
         </div>
       </section>
     </div>

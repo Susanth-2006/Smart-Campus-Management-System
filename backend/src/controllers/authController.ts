@@ -1,5 +1,5 @@
 import bcrypt from 'bcrypt';
-import { Role } from '@prisma/client';
+import { Role } from '../generated/prisma/client';
 import { z } from 'zod';
 import { asyncHandler, HttpError } from '../utils/errors';
 import { prisma } from '../utils/prisma';

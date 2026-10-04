@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '../generated/prisma/client';
 import { env } from '../utils/env';
 
 export type UserWithProfiles = Prisma.UserGetPayload<{

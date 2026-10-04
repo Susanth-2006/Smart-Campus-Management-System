@@ -6,6 +6,11 @@ on:
 
 jobs:
   test:
+    name: test (files in ${{ matrix.storage }})
+    strategy:
+      fail-fast: false
+      matrix:
+        storage: [disk, db]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -25,6 +30,7 @@ jobs:
       LOGIN_RATE_LIMIT: '1000'
       UPLOAD_RATE_LIMIT: '1000'
       PORT: '4000'
+      STORAGE: ${{ matrix.storage }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -36,10 +42,9 @@ jobs:
           npm --prefix backend ci
           npm --prefix frontend ci
 
-      - name: Prisma client + migrations are in sync with schema.prisma
+      - name: Migrations are in sync with schema.prisma
         working-directory: backend
         run: |
-          npx prisma generate
           PGPASSWORD=postgres psql -h localhost -U postgres -c 'CREATE DATABASE shadow;'
           npx prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma --shadow-database-url "$SHADOW_DATABASE_URL" --exit-code
 

@@ -1,5 +1,5 @@
 import { asyncHandler } from '../utils/errors';
-import { Role } from '@prisma/client';
+import { Role } from '../generated/prisma/client';
 import { prisma } from '../utils/prisma';
 import { oneOf, textParam } from '../utils/query';
 

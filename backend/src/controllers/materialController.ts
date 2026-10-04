@@ -1,12 +1,10 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { z } from 'zod';
 import { asyncHandler, HttpError } from '../utils/errors';
 import { prisma } from '../utils/prisma';
 import { notifyUsers } from '../utils/notify';
 import { STORED_NAME } from '../utils/files';
 import { signedPath } from '../utils/signedUrl';
-import { UPLOAD_DIR } from './uploadController';
+import { storage } from '../utils/storage';
 
 type User = NonNullable<Express.Request['user']>;
 
@@ -45,7 +43,7 @@ export const createMaterial = asyncHandler(async (req, res) => {
   if (u.role !== 'FACULTY' && u.role !== 'ADMIN') throw new HttpError(403, 'Only faculty can upload materials');
   const course = await assertCanView(u, req.params.id);
   const body = createSchema.parse(req.body);
-  if (!fs.existsSync(path.join(UPLOAD_DIR, body.storedName))) throw new HttpError(400, 'Upload the file first');
+  if (!(await storage.exists(body.storedName))) throw new HttpError(400, 'Upload the file first');
 
   const material = await prisma.material.create({ data: { ...body, courseId: course.id, uploadedById: u.id }, include: { uploadedBy: { select: { name: true } } } });
   const enrolled = await prisma.enrollment.findMany({ where: { courseId: course.id }, select: { student: { select: { userId: true } } } });
@@ -59,6 +57,6 @@ export const deleteMaterial = asyncHandler(async (req, res) => {
   if (!m) throw new HttpError(404, 'Material not found');
   if (u.role === 'FACULTY' ? m.course.facultyId !== u.profileId : u.role !== 'ADMIN') throw new HttpError(403, 'You cannot remove this material');
   await prisma.material.delete({ where: { id: m.id } });
-  fs.promises.unlink(path.join(UPLOAD_DIR, m.storedName)).catch(() => {});
+  storage.remove(m.storedName).catch(() => {});
   res.status(204).end();
 });
