@@ -85,3 +85,8 @@ The API tests cover login and token handling, a role-by-endpoint permission matr
 **Hardened:** JWT algorithm pinned, weak `JWT_SECRET` rejected in production, constant-time login for unknown emails, configurable rate limits, `/api/health` checks the database, graceful shutdown.
 **Deployment:** Vercel-ready (serverless entry point, database file storage, engine-free Prisma client generated into `src/generated`, CORS allow-list with wildcards, proxy-aware rate limits, configurable demo logins/password) with a step-by-step `DEPLOY.md`, verified with Vercel's own CLI build.
 **Added:** the real Section H timetable and faculty, lab batches, Saturday + parallel-session support in the timetable, "Now" highlight, print view, calendar (.ics) export, a Humanities & Sciences department, 43 offline tests, 138 API tests, CI.
+
+## Team Contributions
+- Contributed to API testing and validation.
+- Assisted with identifying edge cases and debugging.
+- Helped improve project documentation.
