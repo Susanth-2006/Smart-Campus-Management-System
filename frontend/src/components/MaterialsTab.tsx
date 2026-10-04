@@ -50,7 +50,7 @@ export function MaterialsTab({ courseId, canManage }: { courseId: string; canMan
             <li key={m.id} className="flex items-center gap-3 py-3">
               <FileText className="shrink-0 text-clay" />
               <span className="min-w-0 flex-1"><span className="block truncate font-medium">{m.title}</span><span className="text-xs text-slate">{m.fileName} · {fmtSize(m.size)} · {m.uploadedBy.name} · {new Date(m.createdAt).toLocaleDateString()}</span></span>
-              <a href={assetUrl(`/uploads/${m.storedName}`)} target="_blank" rel="noopener noreferrer" className="btn-ghost !py-1.5" aria-label={`Download ${m.title}`}><Download size={16} />Open</a>
+              <a href={assetUrl(m.downloadUrl)} target="_blank" rel="noopener noreferrer" className="btn-ghost !py-1.5" aria-label={`Download ${m.title}`}><Download size={16} />Open</a>
               {canManage && <button aria-label={`Delete ${m.title}`} onClick={() => del.mutate(m.id)} className="rounded-lg p-2 text-slate hover:text-clay"><Trash2 size={16} /></button>}
             </li>
           ))}

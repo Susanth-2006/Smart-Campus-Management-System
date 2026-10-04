@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { asyncHandler, HttpError } from '../utils/errors';
 import { prisma } from '../utils/prisma';
+import { intParam } from '../utils/query';
 
 const include = {
   course: { select: { id: true, code: true, name: true, faculty: { select: { id: true, user: { select: { name: true } } } } } },
@@ -9,9 +10,17 @@ const include = {
 
 export const listTimetable = asyncHandler(async (req, res) => {
   const u = req.user!;
-  const { courseId, facultyId, room, day } = req.query as Record<string, string | undefined>;
+  const { courseId, facultyId, room } = req.query as Record<string, string | undefined>;
+  const day = intParam(req.query.day, 'day', { min: 1, max: 7 });
+  // Students see their own lab batch by default; ?scope=section shows the whole class sheet (every batch)
+  let batchFilter: Prisma.TimetableWhereInput = {};
+  if (u.role === 'STUDENT' && req.query.scope !== 'section') {
+    const me = await prisma.student.findUnique({ where: { id: u.profileId }, select: { batch: true } });
+    if (me?.batch) batchFilter = { section: { in: ['ALL', me.batch] } };
+  }
   const where: Prisma.TimetableWhereInput = {
-    ...(day && { dayOfWeek: Number(day) }),
+    ...batchFilter,
+    ...(day !== undefined && { dayOfWeek: day }),
     ...(room && { room }),
     course: {
       ...(courseId && { id: courseId }),

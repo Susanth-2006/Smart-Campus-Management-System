@@ -39,7 +39,7 @@ export default function ComplaintDetail() {
           <h1 className="font-display text-2xl">{c.title}</h1>
           <p className="mt-2 text-sm text-slate">{c.description}</p>
           <p className="mt-3 text-sm"><b>Location:</b> {c.location}</p>
-          {c.imageUrl && <a href={assetUrl(c.imageUrl)} target="_blank" rel="noopener noreferrer"><img src={assetUrl(c.imageUrl)} alt="Photo attached to this complaint" className="mt-3 max-h-56 rounded-xl border border-line" /></a>}
+          {c.imageSrc && <a href={assetUrl(c.imageSrc)} target="_blank" rel="noopener noreferrer"><img src={assetUrl(c.imageSrc)} alt="Photo attached to this complaint" className="mt-3 max-h-56 rounded-xl border border-line" /></a>}
           {c.student && <p className="text-sm"><b>Reported by:</b> {c.student.user.name} ({c.student.rollNo})</p>}
           {c.task && <p className="text-sm"><b>Assigned to:</b> {c.task.staff.user.name} ({c.task.staff.staffType})</p>}
           <span className="mt-3 inline-block rounded-full bg-peach/30 px-3 py-1 text-xs font-semibold text-clay">{STATUS_LABEL[c.status]}</span>

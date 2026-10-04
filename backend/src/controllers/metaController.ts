@@ -1,5 +1,7 @@
 import { asyncHandler } from '../utils/errors';
+import { Role } from '@prisma/client';
 import { prisma } from '../utils/prisma';
+import { oneOf, textParam } from '../utils/query';
 
 export const listDepartments = asyncHandler(async (_req, res) => {
   res.json(await prisma.department.findMany({ orderBy: { name: 'asc' } }));
@@ -43,7 +45,7 @@ export const stats = asyncHandler(async (_req, res) => {
 
 export const search = asyncHandler(async (req, res) => {
   const u = req.user!;
-  const q = String(req.query.q ?? '').trim();
+  const q = textParam(req.query.q) ?? '';
   if (q.length < 2) return res.json([]);
   const ci = { contains: q, mode: 'insensitive' as const };
   const staffOrAdmin = u.role === 'ADMIN' || u.role === 'FACULTY';
@@ -67,10 +69,10 @@ export const search = asyncHandler(async (req, res) => {
 });
 
 export const listUsers = asyncHandler(async (req, res) => {
-  const q = String(req.query.q ?? '').trim();
-  const role = req.query.role as string | undefined;
+  const q = textParam(req.query.q) ?? '';
+  const role = oneOf(req.query.role, Object.values(Role), 'role');
   res.json(await prisma.user.findMany({
-    where: { ...(role && { role: role as any }), ...(q && { OR: [{ name: { contains: q, mode: 'insensitive' } }, { email: { contains: q, mode: 'insensitive' } }] }) },
+    where: { ...(role && { role }), ...(q && { OR: [{ name: { contains: q, mode: 'insensitive' } }, { email: { contains: q, mode: 'insensitive' } }] }) },
     select: { id: true, name: true, email: true, role: true, createdAt: true },
     orderBy: { name: 'asc' }, take: 200,
   }));

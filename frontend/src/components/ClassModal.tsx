@@ -12,9 +12,9 @@ export function ClassModal({ entry, onClose }: { entry: TimetableEntry | null; o
     <Modal open={!!entry} onClose={onClose} title={entry?.course.name ?? ''}>
       {entry && (
         <div className="space-y-3 text-sm">
-          <span className="inline-block rounded-full bg-peach/30 px-3 py-1 text-xs font-semibold text-clay">{entry.course.code}</span>
+          <span className="inline-block rounded-full bg-peach/30 px-3 py-1 text-xs font-semibold text-clay">{entry.course.code}</span>{entry.section !== 'ALL' && <span className="ml-2 inline-block rounded-full bg-navy/10 px-3 py-1 text-xs font-semibold text-navy">Batch {entry.section}</span>}
           <p className="flex items-center gap-2"><UserRound size={16} className="text-clay" />{entry.course.faculty.user.name}</p>
-          <p className="flex items-center gap-2"><Clock size={16} className="text-clay" />{DAYS[entry.dayOfWeek]}, {fmtTime(entry.startTime)} – {fmtTime(entry.endTime)}</p>
+          <p className="flex items-center gap-2"><Clock size={16} className="text-clay" />{DAYS[entry.dayOfWeek % 7]}, {fmtTime(entry.startTime)} – {fmtTime(entry.endTime)}</p>
           <p className="flex items-center gap-2"><DoorOpen size={16} className="text-clay" />Room {entry.room}</p>
           <Link to={`${base}/${entry.course.id}`} onClick={onClose} className="btn-primary mt-2 w-full">View Course</Link>
         </div>

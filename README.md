@@ -12,7 +12,7 @@ docker compose -f database/docker-compose.yml up -d
 cd backend
 cp .env.example .env            # set JWT_SECRET
 npm install
-npx prisma migrate dev --name init
+npx prisma migrate dev            # applies the migrations in backend/prisma/migrations
 npm run db:seed
 npm run dev                     # http://localhost:4000
 
@@ -24,12 +24,13 @@ npm run dev                     # http://localhost:5173
 ```
 
 ## Already running an earlier version? Read this first
-This version adds new database tables (facilities, library, transport, calendar, materials). From `backend`:
+This version adds a `batch` column on students (lab batches B-1 / B-2) and replaces the demo CSE data with the real timetable. From `backend`:
 ```bash
-npx prisma migrate dev --name pending_features
-npm run db:seed        # wipes and re-creates the demo data, including the new tables
+npx prisma migrate deploy   # applies the new `student_batch` migration (use `migrate dev` while developing)
+npm run db:seed             # wipes and re-creates the demo data
 npm run dev
 ```
+Set `NODE_ENV=production` and a strong `JWT_SECRET` (32+ random characters) when you deploy; the API refuses to start otherwise.
 Uploaded photos and course materials are stored in `backend/uploads/` (created automatically, git-ignored).
 
 ## Demo accounts (password `Password@123`)
@@ -49,32 +50,34 @@ student@smartcampus.com · faculty@smartcampus.com · admin@smartcampus.com · s
 `GET /transport/routes`, `GET/PUT/DELETE /transport/my-route` · `GET /calendar`, `POST/PUT/DELETE /calendar` (admin).
 Uploads are validated by size, an allow-list of types, and the file's real signature; stored under random names; complaints only accept paths of our own uploads.
 
+## Real class data: CSE · III B.Tech I-Sem · Section H
+The demo student (and the 8 other CSE students) belong to **Section H, Room 225**, and CSE uses the department's real timetable (A.Y. 2026-27, version 02, W.E.F. 06-07-2026): the 10 subjects with their faculty, the Saturday classes, the parallel lab batches (B-1 / B-2), the Training blocks and lunch. The data lives in one file, `backend/prisma/hSection.ts`, which the seed and the tests share. Students see their own batch by default, with a "Whole section" toggle that shows the sheet exactly as printed.
+Things the sheet does not say, so the seed assumes them (change them in `hSection.ts` / `seed.ts`): credits = periods per week (Training and Introduction to Cyber Security carry none), lab rooms are named after the lab, Training takes place in Room 225, and the second Professional Communication Skills Lab faculty is cut off on the sheet ("Dr Mudasir A…") so only Dr P Narasimha Raju is recorded.
+
 ## Tests and verification
 ```bash
-npm install          # at repo root (installs tsx)
-npm test             # 17 logic tests: grading, GPA, nav vs routes, seed timetable, seed volumes, upload safety
-npm run typecheck    # real tsc builds of backend and frontend (needs both installed)
+npm install                    # at repo root (installs tsx)
+npm test                       # 41 offline tests: grading/GPA, nav vs routes, seed invariants, upload safety, date/query/error/signed-link helpers,
+                               #   the real timetable data, timetable grid layout, calendar export, and a real render of the Timetable page
+npm run typecheck              # real tsc builds of backend and frontend
+# API integration tests (138) need a running API + seeded database:
+cd backend && npm run db:seed && npm run dev      # terminal 1
+npm run test:api                                  # terminal 2 (repo root)
 ```
-What was verified before delivery (in a sandbox with no package registry access):
-1. All 84 source files parse with 0 syntax errors.
-2. Backend and frontend type-check with 0 errors against stubbed third-party types.
-3. 17 logic tests pass (grading, GPA, role navigation vs routes, seed timetable clash-freedom, seed volumes, upload signature / filename / URL safety).
-4. Render smoke test: 87 server-side renders pass (every page for every role it is meant for, plus navbar, breadcrumbs, menus and
-   command palette), using the real component code with stubbed router/animation/chart/query libraries and mock API data.
-5. Review fixes applied along the way: Map-from-tuple typing, `npm start` path, Vite type reference, recharts formatter typing,
-   union-array typing in search, local-date handling for attendance (IST), lazy-loaded dashboards, CORS default for 127.0.0.1,
-   non-link group breadcrumbs, staff notification link, role-gated requests on the course page.
+`.github/workflows/ci.yml` runs all of this on every push, against a real PostgreSQL, and also checks that the migrations match `schema.prisma`.
 
-**Not verified (could not be, without registry access):** installing the real dependencies, running Prisma migrations and the seed against
-Postgres, starting the servers, real HTTP/auth round-trips, and interactive behaviour in a browser (effects, clicks, charts, animations).
-Run the steps above; if anything fails, the error message is all that is needed to fix it.
+The API tests cover login and token handling, a role-by-endpoint permission matrix, data isolation between students, attendance, marks (publish / notify once), the full complaint lifecycle (assign, reassign, resolve, close), private file links, library loans including a concurrent-borrow race, calendar, transport, announcements, notifications, uploads, malformed input (no 500s) and the real timetable. Everything was run for real against PostgreSQL 16 (see the sandbox note in the changelog below).
 
 ## Known gaps (honest list)
-(Facilities, Campus Map, Library, Transport, Academic Calendar, complaint photos and course materials are now built.)
-- Never executed end-to-end by the author (see Tests and verification above).
-
+- The browser UI has been rendered on the server and type-checked, but not clicked through in a real browser by the author: do a quick visual pass on the Timetable page (week + day view, print preview, "Add to calendar").
 - Facilities are read-only (seeded data; there is no admin editor). Library has no fines or reservations. Transport has no live bus tracking.
-- Uploaded files live on the server's local disk (`backend/uploads`), not cloud storage; back them up if you deploy.
+- Uploaded files live on the server's local disk (`backend/uploads`), not cloud storage; back them up if you deploy. Downloads use 1-hour signed links.
 - Student "Performance over time" is not shown: marks have no time dimension; subject comparison is.
-- Timetable week navigation changes the date range only (the schedule repeats weekly). The admin timetable view is read-only.
-- Tests cover pure logic only; there are no API integration or UI tests yet.
+- Timetable week navigation changes the date range only (the schedule repeats weekly). The admin timetable view is read-only. Students are assigned to a lab batch in the seed; there is no admin screen for it yet.
+- Tokens are stateless JWTs: changing a password does not sign out other devices.
+- `npm audit` still lists a build-time advisory in the Prisma CLI's config loader (not used at runtime) and react-router 6 (fixed only in v7, a breaking upgrade).
+
+## Changelog (this round)
+**Fixed:** malformed or oversized request bodies returned 500; bad query values (`?status=BOGUS`, `?page=abc`, repeated keys) returned 500; impossible dates such as `2026-02-30` were accepted; attendance could be marked for future dates; faculty could open any student's record; `PUT /marks/:id` could overwrite a different student's marks; admins could not reassign a complaint once work started; uploaded files (course notes, complaint photos) were readable by anyone with the link; the timetable's faculty filter never updated; critical/high advisories via `bcrypt` (now v6).
+**Hardened:** JWT algorithm pinned, weak `JWT_SECRET` rejected in production, constant-time login for unknown emails, configurable rate limits, `/api/health` checks the database, graceful shutdown.
+**Added:** the real Section H timetable and faculty, lab batches, Saturday + parallel-session support in the timetable, "Now" highlight, print view, calendar (.ics) export, a Humanities & Sciences department, 41 offline tests, 138 API tests, CI.

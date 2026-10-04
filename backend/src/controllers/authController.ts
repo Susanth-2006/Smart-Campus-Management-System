@@ -7,6 +7,9 @@ import { signToken, toSafeUser } from '../services/authService';
 
 const include = { student: { include: { department: true } }, faculty: { include: { department: true } }, admin: true, staff: true } as const;
 
+// Compared against when the email is unknown, so "no such user" takes as long as "wrong password"
+const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', 10);
+
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
@@ -16,7 +19,7 @@ const loginSchema = z.object({
 export const login = asyncHandler(async (req, res) => {
   const { email, password, role } = loginSchema.parse(req.body);
   const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() }, include });
-  const valid = user ? await bcrypt.compare(password, user.passwordHash) : false;
+  const valid = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH) && !!user;
   if (!user || !valid || (role && role !== user.role)) throw new HttpError(401, 'Invalid email, password or role');
   res.json({ token: signToken(user as any), user: toSafeUser(user as any) });
 });

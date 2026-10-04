@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { authenticate, authorize } from '../middleware/auth';
+import { env } from '../utils/env';
 import * as auth from '../controllers/authController';
 import * as students from '../controllers/studentController';
 import * as attendance from '../controllers/attendanceController';
@@ -19,8 +20,8 @@ import * as transport from '../controllers/transportController';
 import * as calendar from '../controllers/calendarController';
 
 const r = Router();
-const uploadLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false, message: { message: 'Too many uploads. Try again later.' } });
-const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { message: 'Too many attempts. Try again later.' } });
+const uploadLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: env.uploadRateLimit, standardHeaders: true, legacyHeaders: false, message: { message: 'Too many uploads. Try again later.' } });
+const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: env.loginRateLimit, standardHeaders: true, legacyHeaders: false, message: { message: 'Too many attempts. Try again later.' } });
 
 // Auth
 r.post('/auth/login', loginLimiter, auth.login);

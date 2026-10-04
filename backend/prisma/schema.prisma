@@ -102,6 +102,7 @@ model Student {
   departmentId String
   semester     Int
   section      String
+  batch        String? // lab batch inside the section, e.g. "B-1" / "B-2" (null = not split into batches)
   user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   department   Department @relation(fields: [departmentId], references: [id])
 
@@ -207,7 +208,7 @@ model Timetable {
   startTime String // "09:00"
   endTime   String // "10:00"
   room      String
-  section   String @default("ALL")
+  section   String @default("ALL") // "ALL" or a lab batch such as "B-1" / "B-2"
   course    Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
   @@index([dayOfWeek])
