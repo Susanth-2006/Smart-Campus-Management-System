@@ -81,3 +81,8 @@ The API tests cover login and token handling, a role-by-endpoint permission matr
 **Fixed:** malformed or oversized request bodies returned 500; bad query values (`?status=BOGUS`, `?page=abc`, repeated keys) returned 500; impossible dates such as `2026-02-30` were accepted; attendance could be marked for future dates; faculty could open any student's record; `PUT /marks/:id` could overwrite a different student's marks; admins could not reassign a complaint once work started; uploaded files (course notes, complaint photos) were readable by anyone with the link; the timetable's faculty filter never updated; critical/high advisories via `bcrypt` (now v6).
 **Hardened:** JWT algorithm pinned, weak `JWT_SECRET` rejected in production, constant-time login for unknown emails, configurable rate limits, `/api/health` checks the database, graceful shutdown.
 **Added:** the real Section H timetable and faculty, lab batches, Saturday + parallel-session support in the timetable, "Now" highlight, print view, calendar (.ics) export, a Humanities & Sciences department, 41 offline tests, 138 API tests, CI.
+
+## Team Contributions
+- Contributed to API testing and validation.
+- Assisted with identifying edge cases and debugging.
+- Helped improve project documentation.
