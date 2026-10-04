@@ -95,7 +95,10 @@ t('upload: stored names cannot escape the uploads folder or use risky types', ()
 });
 t('upload: no executable or scriptable types are allowed', () => {
   for (const mime of Object.keys({ ...IMAGES, ...DOCS })) assert.ok(!/html|javascript|svg|xml$|x-msdownload|php/.test(mime), mime);
-  assert.ok(LIMIT.image < LIMIT.material);
+  // With STORAGE=db (Vercel) both limits are 3 MB, so "at most" rather than "strictly less"
+  assert.ok(LIMIT.image <= LIMIT.material);
+  // In database mode a base64 upload must fit inside Vercel's 4.5 MB request-body limit
+  if (process.env.STORAGE === 'db' || process.env.VERCEL) assert.ok((LIMIT.material * 4) / 3 < 4.5 * 1024 * 1024, 'upload limit too big for Vercel');
 });
 t('complaint photo URL pattern only accepts our own uploads', () => {
   const src = fs.readFileSync(path.resolve(process.cwd(), 'backend/src/controllers/complaintController.ts'), 'utf8');

@@ -1,9 +1,11 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { GraduationCap } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { Role } from '../types';
 import { ROLE_LABEL } from '../utils/navConfig';
+import { API_BASE, API_BASE_IS_DEFAULT } from '../services/api';
+import { ApiStatus, diagnoseApi } from '../services/diagnose';
 
 const DEMOS: { label: string; role: Role; email: string }[] = [
   { label: 'Student Demo', role: 'STUDENT', email: 'student@smartcampus.com' },
@@ -24,6 +26,12 @@ export default function Login() {
   const [role, setRole] = useState<Role>('STUDENT');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<ApiStatus>({ kind: 'checking' });
+  useEffect(() => {
+    let live = true;
+    diagnoseApi(API_BASE, { isProd: import.meta.env.PROD, usingDefaultBase: API_BASE_IS_DEFAULT, origin: window.location.origin }).then((s) => live && setStatus(s));
+    return () => { live = false; };
+  }, []);
   if (user) return <Navigate to="/dashboard" replace />;
 
   const submit = async (e?: FormEvent, creds = { email, password, role }) => {
@@ -50,7 +58,15 @@ export default function Login() {
       <section className="flex items-center justify-center p-6">
         <div className="card w-full max-w-md p-8">
           <h2 className="font-display text-3xl">Welcome back</h2>
-          <p className="mb-6 mt-1 text-sm text-slate">Sign in to continue to your campus.</p>
+          <p className="mb-4 mt-1 text-sm text-slate">Sign in to continue to your campus.</p>
+          {status.kind === 'problem' && (
+            <div role="alert" className="mb-4 rounded-xl border border-clay/40 bg-peach/25 p-4 text-sm">
+              <p className="font-semibold text-clay">{status.title}</p>
+              <p className="mt-1 text-navy/80">{status.hint}</p>
+              <p className="mt-2 break-all text-xs text-slate">API address used by this site: {API_BASE}</p>
+            </div>
+          )}
+          {status.kind === 'ok' && <p className="mb-4 flex items-center gap-2 text-xs text-slate"><span className="h-2 w-2 rounded-full bg-green-500" aria-hidden="true" />Server connected</p>}
           <form onSubmit={submit} className="space-y-4" noValidate>
             <div>
               <label htmlFor="role" className="mb-1 block text-sm font-medium">I am a</label>

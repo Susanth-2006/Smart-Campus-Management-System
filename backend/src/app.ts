@@ -40,7 +40,12 @@ app.get('/uploads/:name', async (req, res, next) => {
 });
 
 app.get('/api/health', async (_req, res) => {
-  try { await prisma.$queryRaw`SELECT 1`; res.json({ status: 'ok', db: 'ok' }); }
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    // `seeded: false` = connected, but the tables are empty or missing (migrations / seed not run yet)
+    const seeded = await prisma.user.count().then((n) => n > 0).catch(() => false);
+    res.json({ status: 'ok', db: 'ok', seeded });
+  }
   catch { res.status(503).json({ status: 'degraded', db: 'unreachable' }); }
 });
 app.use('/api', routes);

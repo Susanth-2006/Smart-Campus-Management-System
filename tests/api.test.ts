@@ -61,7 +61,7 @@ async function main() {
   const tok: Record<string, string> = { student: S.token, faculty: F.token, admin: A.token, staff: W.token };
 
   section('Health & auth');
-  await t('health endpoint checks the database', async () => { const r = await get('/api/health'); assert.equal(r.status, 200); assert.equal(r.body.status, 'ok'); assert.equal(r.body.db, 'ok'); });
+  await t('health endpoint checks the database', async () => { const r = await get('/api/health'); assert.equal(r.status, 200); assert.equal(r.body.status, 'ok'); assert.equal(r.body.db, 'ok'); assert.equal(r.body.seeded, true, 'health should say the database is seeded'); });
   await t('security headers are present (helmet)', async () => {
     const r = await fetch(`${API}/api/health`);
     assert.equal(r.headers.get('x-content-type-options'), 'nosniff'); assert.ok(!r.headers.get('x-powered-by'), 'x-powered-by should be hidden');
