@@ -1,5 +1,5 @@
 import { NextFunction, Request, RequestHandler, Response } from 'express';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '../generated/prisma/client';
 import { ZodError } from 'zod';
 
 export class HttpError extends Error {

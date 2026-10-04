@@ -9,7 +9,9 @@
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:seed": "prisma db seed",
-    "db:reset": "prisma migrate reset --force"
+    "db:reset": "prisma migrate reset --force",
+    "postinstall": "prisma generate",
+    "db:deploy": "prisma migrate deploy"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -23,7 +25,9 @@
     "express-rate-limit": "^7.4.0",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "@prisma/adapter-pg": "^6.19.3",
+    "pg": "^8.13.0"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
@@ -33,6 +37,7 @@
     "@types/node": "^20.14.0",
     "prisma": "^6.19.3",
     "tsx": "^4.16.0",
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "@types/pg": "^8.11.0"
   }
 }

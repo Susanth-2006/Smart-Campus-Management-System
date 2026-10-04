@@ -8,7 +8,16 @@ export const DOCS: Record<string, string> = {
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
   'text/plain': 'txt',
 };
-export const LIMIT = { image: 3 * 1024 * 1024, material: 8 * 1024 * 1024 };
+// Database storage (Vercel) has to fit inside the platform's 4.5 MB request-body limit, and base64 adds about a third.
+const MB = 1024 * 1024;
+const smallUploads = (process.env.STORAGE ?? (process.env.VERCEL ? 'db' : 'disk')) === 'db';
+export const LIMIT = { image: 3 * MB, material: (smallUploads ? 3 : 8) * MB };
+export const MIME_BY_EXT: Record<string, string> = {
+  jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp', pdf: 'application/pdf', txt: 'text/plain',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+};
 
 // Check the file's real signature so a renamed file cannot sneak through
 export function signatureOk(ext: string, b: Buffer): boolean {

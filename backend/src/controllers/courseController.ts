@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma } from '../generated/prisma/client';
 import { z } from 'zod';
 import { asyncHandler, HttpError } from '../utils/errors';
 import { prisma } from '../utils/prisma';

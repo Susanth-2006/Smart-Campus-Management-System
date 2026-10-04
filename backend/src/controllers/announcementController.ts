@@ -1,4 +1,4 @@
-import { AnnouncementCategory, Prisma, Priority, Role } from '@prisma/client';
+import { AnnouncementCategory, Prisma, Priority, Role } from '../generated/prisma/client';
 import { z } from 'zod';
 import { asyncHandler, HttpError } from '../utils/errors';
 import { prisma } from '../utils/prisma';

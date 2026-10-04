@@ -1,4 +1,4 @@
-import { CalendarEventType } from '@prisma/client';
+import { CalendarEventType } from '../generated/prisma/client';
 import { z } from 'zod';
 import { asyncHandler } from '../utils/errors';
 import { prisma } from '../utils/prisma';

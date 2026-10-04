@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import { Role } from '@prisma/client';
+import { Role } from '../generated/prisma/client';
 import { env } from '../utils/env';
 import { HttpError } from '../utils/errors';
 

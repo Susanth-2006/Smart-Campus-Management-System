@@ -19,6 +19,9 @@ export const env = {
   jwtSecret,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '7d',
   clientOrigin: process.env.CLIENT_ORIGIN ?? 'http://localhost:5173,http://127.0.0.1:5173',
+  // Hops of reverse proxy in front of the API (Vercel = 1). Needed so rate limits see each visitor's real IP.
+  trustProxy: Number(process.env.TRUST_PROXY ?? (process.env.VERCEL ? 1 : 0)),
   loginRateLimit: Number(process.env.LOGIN_RATE_LIMIT ?? 30),
-  uploadRateLimit: Number(process.env.UPLOAD_RATE_LIMIT ?? 60),
+  // Files live in the database on Vercel, so be stricter there by default
+  uploadRateLimit: Number(process.env.UPLOAD_RATE_LIMIT ?? ((process.env.STORAGE ?? (process.env.VERCEL ? 'db' : 'disk')) === 'db' ? 15 : 60)),
 };

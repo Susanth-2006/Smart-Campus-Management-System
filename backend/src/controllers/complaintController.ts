@@ -1,4 +1,4 @@
-import { ComplaintCategory, ComplaintStatus, Prisma, Priority, TaskStatus } from '@prisma/client';
+import { ComplaintCategory, ComplaintStatus, Prisma, Priority, TaskStatus } from '../generated/prisma/client';
 import { z } from 'zod';
 import { asyncHandler, HttpError } from '../utils/errors';
 import { prisma } from '../utils/prisma';

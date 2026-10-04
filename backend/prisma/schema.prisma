@@ -1,5 +1,12 @@
 generator client {
-  provider = "prisma-client-js"
+  provider     = "prisma-client"
+  // Generated into the source tree (git-ignored, rebuilt by `npm install` / `prisma generate`) so that serverless
+  // bundlers such as Vercel's follow it like any other code. Import from "src/generated/prisma/client".
+  output       = "../src/generated/prisma"
+  // Pure-JavaScript query engine + the `pg` driver adapter: no native binary to download or bundle
+  engineType   = "client"
+  runtime      = "nodejs"
+  moduleFormat = "cjs"
 }
 
 datasource db {
@@ -416,4 +423,13 @@ model Material {
   uploadedBy   User     @relation(fields: [uploadedById], references: [id])
 
   @@index([courseId])
+}
+
+/// Uploaded files when STORAGE=db (the default on Vercel, whose filesystem is not persistent)
+model StoredFile {
+  name      String   @id
+  mimeType  String
+  size      Int
+  data      Bytes
+  createdAt DateTime @default(now())
 }

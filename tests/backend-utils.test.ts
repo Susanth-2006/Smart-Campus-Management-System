@@ -1,5 +1,5 @@
+import './setup-env';
 import assert from 'node:assert/strict';
-process.env.JWT_SECRET ??= 'unit-test-secret-unit-test-secret-0123456789';
 
 let passed = 0;
 const t = (name: string, fn: () => void | Promise<void>) => queue.push(async () => { await fn(); passed++; console.log('  ✓', name); });
@@ -10,6 +10,7 @@ import { parseDay, campusToday } from '../backend/src/utils/date';
 import { intParam, oneOf, textParam } from '../backend/src/utils/query';
 import { HttpError, errorHandler } from '../backend/src/utils/errors';
 import { signedPath, storedNameOf, verifySignature } from '../backend/src/utils/signedUrl';
+import { originMatcher } from '../backend/src/utils/cors';
 
 // ------------------------------------------------------------------ dates
 t('parseDay accepts real dates and rejects impossible ones', () => {
@@ -51,6 +52,19 @@ t('signed links verify, expire, and cannot be re-pointed', () => {
   assert.ok(!verifySignature(name, exp, sig, now + 61_000), 'expired');
   assert.ok(!verifySignature(other, exp, sig, now), 'other file'); assert.ok(!verifySignature(name, String(Number(exp) + 1), sig, now), 'extended expiry');
   assert.ok(!verifySignature(name, exp, 'AAAA', now)); assert.ok(!verifySignature(name, undefined, sig, now)); assert.ok(!verifySignature(name, exp, undefined, now)); assert.ok(!verifySignature(name, 'abc', sig, now));
+});
+
+// ------------------------------------------------------------------ CORS allow-list
+t('CORS: exact origins, trailing slashes, and nothing else', () => {
+  const ok = originMatcher('https://app.example.com/, http://localhost:5173');
+  assert.ok(ok('https://app.example.com')); assert.ok(ok('http://localhost:5173'));
+  for (const bad of ['https://app.example.com.evil.com', 'https://evil.com', 'http://app.example.com', 'https://sub.app.example.com', 'http://localhost:5174', '']) assert.ok(!ok(bad), bad);
+  assert.ok(!originMatcher('')('https://anything.com'), 'empty list allows nothing');
+});
+t('CORS: wildcard matches one hostname part only (Vercel preview URLs)', () => {
+  const ok = originMatcher('https://smart-campus.vercel.app,https://smart-campus-*.vercel.app');
+  assert.ok(ok('https://smart-campus.vercel.app')); assert.ok(ok('https://smart-campus-git-main-tanay.vercel.app')); assert.ok(ok('https://smart-campus-4f9k2.vercel.app'));
+  for (const bad of ['https://smart-campus-x.vercel.app.evil.com', 'https://other.vercel.app', 'https://smart-campus-.evil.com', 'http://smart-campus-x.vercel.app', 'https://smart-campus-a.b.vercel.app', 'https://smart-campusXvercel.app']) assert.ok(!ok(bad), bad);
 });
 
 // ------------------------------------------------------------------ H-Section data (transcribed from the department sheet)

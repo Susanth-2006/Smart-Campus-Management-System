@@ -1,9 +1,12 @@
 import bcrypt from 'bcrypt';
-import { AttendanceStatus, ComplaintCategory, ComplaintStatus, Priority, PrismaClient, Role, TaskStatus } from '@prisma/client';
+import { AttendanceStatus, ComplaintCategory, ComplaintStatus, Priority, PrismaClient, Role, TaskStatus } from '../src/generated/prisma/client';
 import { computeGrade, computeTotal, MAX_MARKS } from '../src/utils/grading';
 import { H_COURSES, H_FACULTY, H_SECTION, H_SLOTS, slotTimes } from './hSection';
 
-const prisma = new PrismaClient();
+import { PrismaPg } from '@prisma/adapter-pg';
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
+// Every demo account shares one password. For anything public-facing, set SEED_PASSWORD to something private.
+const DEMO_PASSWORD = process.env.SEED_PASSWORD ?? 'Password@123';
 
 // Deterministic PRNG so every seed run produces the same campus
 let s = 20250101;
@@ -60,7 +63,7 @@ async function main() {
     await (prisma[m] as any).deleteMany();
   }
 
-  const hash = await bcrypt.hash('Password@123', 10);
+  const hash = await bcrypt.hash(DEMO_PASSWORD, 10);
   const mkUser = (email: string, name: string, role: Role) => prisma.user.create({ data: { email, name, role, passwordHash: hash, phone: `+91 9${pad(Math.floor(rand() * 1e9), 9)}` } });
 
   const depts = await Promise.all(DEPTS.map((d) => prisma.department.create({ data: { code: d.code, name: d.name } })));
@@ -343,7 +346,7 @@ async function main() {
 
   console.log(`Seeded: ${students.length} students, ${Object.values(facultyByDept).flat().length} faculty, ${staff.length} staff, ${courses.length} courses.`);
   console.log(`Demo student is in ${H_SECTION.programme} ${H_SECTION.department} Section ${H_SECTION.section} (Room ${H_SECTION.room}), using the real timetable.`);
-  console.log('Demo logins (password for all: Password@123):');
+  console.log(`Demo logins (password for all: ${process.env.SEED_PASSWORD ? '[your SEED_PASSWORD]' : DEMO_PASSWORD}):`);
   console.log('  student@smartcampus.com | faculty@smartcampus.com | admin@smartcampus.com | staff@smartcampus.com');
 }
 
