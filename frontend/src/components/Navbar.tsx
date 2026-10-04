@@ -13,7 +13,7 @@ export function Navbar({ onSearch }: { onSearch: () => void }) {
   const [menu, setMenu] = useState(false);
   if (!user) return null;
   return (
-    <header className="sticky top-0 z-40 bg-navy shadow-md">
+    <header className="sticky top-0 z-40 bg-navy shadow-md print:hidden">
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-4 sm:px-6">
         <Link to="/dashboard" className="flex items-center gap-2 text-white">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-peach font-display text-lg text-navy">S</span>

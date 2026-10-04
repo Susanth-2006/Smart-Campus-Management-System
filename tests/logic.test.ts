@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { computeGrade, computeTotal, MAX_MARKS } from '../backend/src/utils/grading';
 import { gpa, gradeOf, attTone, fmtTime, toMin, firstName, MAX } from '../frontend/src/utils/format';
 import { NAV } from '../frontend/src/utils/navConfig';
+import { H_COURSES, H_FACULTY } from '../backend/prisma/hSection';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -54,7 +55,8 @@ const seed = fs.readFileSync(path.resolve(process.cwd(), 'backend/prisma/seed.ts
 const slotsFor = (i: number): [number, number][] => (i < 5 ? [[(i % 5) + 1, 0], [((i + 2) % 5) + 1, 1]] : [[1, 2], [4, 2]]);
 t('seed uses the same slot function as the test', () => assert.ok(seed.includes('i < 5 ? [[(i % 5) + 1, 0], [((i + 2) % 5) + 1, 1]] : [[1, 2], [4, 2]]')));
 t('seed timetable: no student-group or faculty clashes, rooms unique', () => {
-  const counts: Record<string, number> = { CSE: 6, IT: 3, ECE: 3, ME: 3, CE: 3, EEE: 3 };
+  // CSE is the real H-Section (checked in backend-utils.test.ts); the other departments still use the generated slots
+  const counts: Record<string, number> = { IT: 3, ECE: 3, ME: 3, CE: 3, EEE: 3 };
   let total = 0;
   for (const [dept, n] of Object.entries(counts)) {
     const seenSlot = new Set<string>(), facSlot = new Set<string>(), rooms = new Set<number>();
@@ -65,11 +67,13 @@ t('seed timetable: no student-group or faculty clashes, rooms unique', () => {
       for (const [d, b] of slotsFor(i)) { const k = `${d}-${b}`; assert.ok(!seenSlot.has(k), `${dept} student clash ${k}`); seenSlot.add(k); const fk = `${fac}-${k}`; assert.ok(!facSlot.has(fk), `${dept} faculty clash`); facSlot.add(fk); assert.ok(d >= 1 && d <= 5 && b <= 2); }
     }
   }
-  assert.equal(total, 21);
+  assert.equal(total, 15);
 });
-t('seed volumes meet the spec (50+ students, 15+ faculty, 5+ staff, 20+ courses, 6 depts)', () => {
-  assert.ok(/i < 54/.test(seed)); assert.ok(/i < 3; i\+\+/.test(seed)); assert.equal([...seed.matchAll(/code: '(CSE|IT|ECE|ME|CE|EEE)'/g)].length, 6);
-  assert.equal([...seed.matchAll(/\['(?:CS|IT|EC|ME|CE|EE)\d{3}', '/g)].length, 21); assert.ok(/staffTypes = \[[^\]]*\]/.test(seed));
+t('seed volumes meet the spec (50+ students, 15+ faculty, 5+ staff, 20+ courses, 6 depts + Humanities & Sciences)', () => {
+  assert.ok(/i < 54/.test(seed)); assert.equal([...seed.matchAll(/code: '(CSE|IT|ECE|ME|CE|EEE|HS)'/g)].length, 7);
+  const generated = [...seed.matchAll(/\['(?:IT|EC|ME|CE|EE)\d{3}', '/g)].length;
+  assert.equal(generated, 15); assert.equal(generated + H_COURSES.length, 26); assert.ok(/staffTypes = \[[^\]]*\]/.test(seed));
+  assert.ok(H_FACULTY.length + 15 >= 15, 'enough faculty');
 });
 t('demo accounts exist in seed', () => { for (const e of ['student', 'faculty', 'admin', 'staff']) assert.ok(seed.includes(`${e}@smartcampus.com`), e); });
 console.log(`\n${passed} passed`);

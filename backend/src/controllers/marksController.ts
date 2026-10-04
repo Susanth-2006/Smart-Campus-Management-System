@@ -72,6 +72,7 @@ export const createMarks = asyncHandler((req, res) => save(req, res));
 export const updateMarks = asyncHandler(async (req, res) => {
   const existing = await prisma.marks.findUnique({ where: { id: req.params.id } });
   if (!existing) throw new HttpError(404, 'Marks record not found');
-  req.body = { studentId: existing.studentId, courseId: existing.courseId, internal: existing.internal, assignment: existing.assignment, midExam: existing.midExam, finalExam: existing.finalExam, published: existing.published, ...req.body };
+  // The record's student and course are fixed by the URL; the body can only change the scores / published flag
+  req.body = { internal: existing.internal, assignment: existing.assignment, midExam: existing.midExam, finalExam: existing.finalExam, published: existing.published, ...req.body, studentId: existing.studentId, courseId: existing.courseId };
   return save(req, res, existing.id);
 });

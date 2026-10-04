@@ -5,6 +5,7 @@ import { asyncHandler, HttpError } from '../utils/errors';
 import { prisma } from '../utils/prisma';
 import { notifyUsers } from '../utils/notify';
 import { STORED_NAME } from '../utils/files';
+import { signedPath } from '../utils/signedUrl';
 import { UPLOAD_DIR } from './uploadController';
 
 type User = NonNullable<Express.Request['user']>;
@@ -23,11 +24,12 @@ async function assertCanView(u: User, courseId: string) {
 
 export const listMaterials = asyncHandler(async (req, res) => {
   await assertCanView(req.user!, req.params.id);
-  res.json(await prisma.material.findMany({
+  const items = await prisma.material.findMany({
     where: { courseId: req.params.id },
     include: { uploadedBy: { select: { name: true } } },
     orderBy: { createdAt: 'desc' },
-  }));
+  });
+  res.json(items.map((m) => ({ ...m, downloadUrl: signedPath(m.storedName) })));
 });
 
 const createSchema = z.object({
@@ -48,7 +50,7 @@ export const createMaterial = asyncHandler(async (req, res) => {
   const material = await prisma.material.create({ data: { ...body, courseId: course.id, uploadedById: u.id }, include: { uploadedBy: { select: { name: true } } } });
   const enrolled = await prisma.enrollment.findMany({ where: { courseId: course.id }, select: { student: { select: { userId: true } } } });
   await notifyUsers(enrolled.map((e) => e.student.userId), { type: 'MATERIAL', title: 'New course material', message: `New material in ${course.name}: ${body.title}`, link: `/academics/courses/${course.id}` });
-  res.status(201).json(material);
+  res.status(201).json({ ...material, downloadUrl: signedPath(material.storedName) });
 });
 
 export const deleteMaterial = asyncHandler(async (req, res) => {

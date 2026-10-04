@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: smart_campus
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/smart_campus?schema=public
+      SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/shadow?schema=public
+      JWT_SECRET: ci-only-secret-0123456789-0123456789-abcdef
+      LOGIN_RATE_LIMIT: '1000'
+      UPLOAD_RATE_LIMIT: '1000'
+      PORT: '4000'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: '**/package-lock.json' }
+
+      - name: Install
+        run: |
+          npm ci
+          npm --prefix backend ci
+          npm --prefix frontend ci
+
+      - name: Prisma client + migrations are in sync with schema.prisma
+        working-directory: backend
+        run: |
+          npx prisma generate
+          PGPASSWORD=postgres psql -h localhost -U postgres -c 'CREATE DATABASE shadow;'
+          npx prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma --shadow-database-url "$SHADOW_DATABASE_URL" --exit-code
+
+      - name: Apply migrations and seed
+        working-directory: backend
+        run: |
+          npx prisma migrate deploy
+          npm run db:seed
+
+      - name: Type-check and build both apps
+        run: npm run typecheck
+
+      - name: Unit tests (logic, backend utilities, real timetable data, frontend)
+        run: npm test
+
+      - name: Start the API
+        working-directory: backend
+        run: |
+          npm run dev > ../api.log 2>&1 &
+          for i in $(seq 1 40); do curl -fs localhost:4000/api/health && break; sleep 1; done
+          curl -fs localhost:4000/api/health
+
+      - name: API integration tests
+        run: npm run test:api
+
+      - name: Dependency audit (production dependencies, informational)
+        continue-on-error: true
+        run: |
+          npm --prefix backend audit --omit=dev || true
+          npm --prefix frontend audit --omit=dev || true
+
+      - name: API log (on failure)
+        if: failure()
+        run: cat api.log

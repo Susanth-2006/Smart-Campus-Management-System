@@ -8,7 +8,7 @@ export function authenticate(req: Request, _res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) return next(new HttpError(401, 'Authentication required'));
   try {
-    const p = jwt.verify(header.slice(7), env.jwtSecret) as { sub: string; role: Role; profileId: string };
+    const p = jwt.verify(header.slice(7), env.jwtSecret, { algorithms: ['HS256'] }) as { sub: string; role: Role; profileId: string };
     req.user = { id: p.sub, role: p.role, profileId: p.profileId };
     next();
   } catch {

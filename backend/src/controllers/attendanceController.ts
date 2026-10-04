@@ -2,7 +2,7 @@ import { AttendanceStatus, Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { asyncHandler, HttpError } from '../utils/errors';
 import { prisma } from '../utils/prisma';
-import { parseDay } from '../utils/date';
+import { campusToday, parseDay } from '../utils/date';
 import { notifyUsers } from '../utils/notify';
 
 async function assertCourseAccess(user: NonNullable<Express.Request['user']>, courseId: string) {
@@ -64,6 +64,7 @@ export const markAttendance = asyncHandler(async (req, res) => {
   const body = markSchema.parse(req.body);
   const course = await assertCourseAccess(req.user!, body.courseId);
   const date = parseDay(body.date);
+  if (body.date > campusToday()) throw new HttpError(400, 'You cannot mark attendance for a future date');
 
   const enrolled = await prisma.enrollment.findMany({ where: { courseId: course.id }, select: { studentId: true, student: { select: { userId: true } } } });
   const enrolledIds = new Set(enrolled.map((e) => e.studentId));

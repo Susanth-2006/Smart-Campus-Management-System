@@ -4,6 +4,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { asyncHandler, HttpError } from '../utils/errors';
 import { DOCS, IMAGES, LIMIT, signatureOk } from '../utils/files';
+import { signedPath } from '../utils/signedUrl';
 
 export const UPLOAD_DIR = path.resolve(process.cwd(), 'uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -32,5 +33,5 @@ export const upload = asyncHandler(async (req, res) => {
   const storedName = `${crypto.randomUUID()}.${ext}`;
   await fs.promises.writeFile(path.join(UPLOAD_DIR, storedName), buf);
   const fileName = body.fileName.replace(/[^\w.\- ()]/g, '_');
-  res.status(201).json({ storedName, url: `/uploads/${storedName}`, fileName, mimeType: m[1], size: buf.length });
+  res.status(201).json({ storedName, url: `/uploads/${storedName}`, signedUrl: signedPath(storedName), fileName, mimeType: m[1], size: buf.length });
 });

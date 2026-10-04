@@ -1,6 +1,7 @@
 import bcrypt from 'bcrypt';
 import { AttendanceStatus, ComplaintCategory, ComplaintStatus, Priority, PrismaClient, Role, TaskStatus } from '@prisma/client';
 import { computeGrade, computeTotal, MAX_MARKS } from '../src/utils/grading';
+import { H_COURSES, H_FACULTY, H_SECTION, H_SLOTS, slotTimes } from './hSection';
 
 const prisma = new PrismaClient();
 
@@ -27,10 +28,12 @@ const DEPTS = [
   { code: 'ME', name: 'Mechanical', room: 'M' },
   { code: 'CE', name: 'Civil', room: 'V' },
   { code: 'EEE', name: 'Electrical', room: 'L' },
+  { code: 'HS', name: 'Humanities & Sciences', room: 'H' }, // English, Mathematics, Logical Reasoning … (no students of its own)
 ];
+const STUDENT_DEPTS = 6; // students are spread over the first six departments only
 
+// CSE is not listed here: its courses, faculty and weekly timetable are the real H-Section data in ./hSection.ts
 const COURSES: Record<string, [string, string][]> = {
-  CSE: [['CS301', 'Data Structures'], ['CS302', 'Computer Networks'], ['CS303', 'Software Engineering'], ['CS304', 'Database Systems'], ['CS305', 'Operating Systems'], ['CS306', 'Theory of Computation']],
   IT: [['IT301', 'Web Technologies'], ['IT302', 'Information Security'], ['IT303', 'Cloud Computing']],
   ECE: [['EC301', 'Digital Signal Processing'], ['EC302', 'VLSI Design'], ['EC303', 'Communication Systems']],
   ME: [['ME301', 'Thermodynamics'], ['ME302', 'Fluid Mechanics'], ['ME303', 'Machine Design']],
@@ -62,29 +65,56 @@ async function main() {
 
   const depts = await Promise.all(DEPTS.map((d) => prisma.department.create({ data: { code: d.code, name: d.name } })));
 
-  // ---- Faculty (3 per department; CSE[0] = demo Dr. Priya Rao)
+  // ---- Faculty. Real names from the H-Section sheet come first in their department; the rest of each department is filled to 3 with demo names.
+  // The first CSE faculty member (K Durga Kalyani) is the demo faculty login.
   const facultyByDept: Record<string, { id: string; userId: string }[]> = {};
+  const facultyByName = new Map<string, { id: string; userId: string }>();
   let fCount = 0;
-  for (const [di, d] of depts.entries()) {
+  for (const d of depts) {
     facultyByDept[d.code] = [];
-    for (let i = 0; i < 3; i++) {
-      const demo = di === 0 && i === 0;
-      const user = await mkUser(demo ? 'faculty@smartcampus.com' : `faculty${++fCount}@smartcampus.com`, demo ? 'Dr. Priya Rao' : `Dr. ${fullName()}`, 'FACULTY');
-      const f = await prisma.faculty.create({ data: { userId: user.id, departmentId: d.id, designation: pick(['Professor', 'Associate Professor', 'Assistant Professor']) } });
+    const real = H_FACULTY.filter((f) => f.dept === d.code).map((f) => f.name);
+    const total = d.code === 'HS' ? real.length : Math.max(3, real.length);
+    for (let i = 0; i < total; i++) {
+      const demo = d.code === 'CSE' && i === 0;
+      const name = real[i] ?? `Dr. ${fullName()}`;
+      const user = await mkUser(demo ? 'faculty@smartcampus.com' : `faculty${++fCount}@smartcampus.com`, name, 'FACULTY');
+      const f = await prisma.faculty.create({ data: { userId: user.id, departmentId: d.id, designation: real[i] ? 'Faculty' : pick(['Professor', 'Associate Professor', 'Assistant Professor']) } });
       facultyByDept[d.code].push({ id: f.id, userId: user.id });
+      if (real[i]) facultyByName.set(name, { id: f.id, userId: user.id });
     }
   }
+  const deptId = (code: string) => depts.find((d) => d.code === code)!.id;
 
   // ---- Courses + timetable
-  const courses: { id: string; code: string; deptCode: string; name: string; facultyId: string; index: number }[] = [];
+  const courses: { id: string; code: string; deptCode: string; name: string; facultyId: string; index: number; graded: boolean }[] = [];
+
+  // CSE · III B.Tech I-Sem · H-Section (the real timetable)
+  const hCourseId = new Map<string, string>();
+  for (const [i, hc] of H_COURSES.entries()) {
+    const fac = facultyByName.get(hc.faculty)!;
+    const c = await prisma.course.create({
+      data: { code: hc.code, name: hc.name, credits: hc.periods, semester: H_SECTION.semester, room: hc.room, departmentId: deptId(hc.owner), facultyId: fac.id,
+        description: hc.kind === 'training' ? 'Scheduled training sessions for the section (see the timetable).' : `${hc.name}. ${hc.periods ? `${hc.periods} periods per week.` : 'No fixed weekly slot.'}` },
+    });
+    hCourseId.set(hc.key, c.id);
+    // `deptCode: 'CSE'` = the cohort that is enrolled, whichever department owns the subject
+    courses.push({ id: c.id, code: hc.code, deptCode: 'CSE', name: hc.name, facultyId: fac.id, index: i, graded: hc.periods > 0 });
+  }
+  await prisma.timetable.createMany({
+    data: H_SLOTS.map((x) => {
+      const hc = H_COURSES.find((c) => c.key === x.course)!;
+      return { courseId: hCourseId.get(x.course)!, dayOfWeek: x.day, ...slotTimes(x), room: hc.room, section: x.batch };
+    }),
+  });
+
   for (const [di, d] of depts.entries()) {
-    for (const [i, [code, name]] of COURSES[d.code].entries()) {
+    for (const [i, [code, name]] of (COURSES[d.code] ?? []).entries()) {
       const fac = facultyByDept[d.code][[0, 1, 2, 0, 1, 2][i]];
       const room = `${DEPTS[di].room}-${200 + i * 2 + 4}`;
       const c = await prisma.course.create({
         data: { code, name, credits: pick([3, 4, 4]), semester: 5, room, departmentId: d.id, facultyId: fac.id, description: `${name}: concepts, problem solving and applied labs for semester 5.` },
       });
-      courses.push({ id: c.id, code, deptCode: d.code, name, facultyId: fac.id, index: i });
+      courses.push({ id: c.id, code, deptCode: d.code, name, facultyId: fac.id, index: i, graded: true });
       await prisma.timetable.createMany({
         data: slotsFor(i).map(([dow, band]) => ({ courseId: c.id, dayOfWeek: dow, startTime: BANDS[band][0], endTime: BANDS[band][1], room })),
       });
@@ -103,34 +133,41 @@ async function main() {
   }
 
   // ---- Students (9 per dept = 54). Student #0 is the demo user, Susanth.
-  const students: { id: string; userId: string; deptCode: string; demo: boolean }[] = [];
+  const students: { id: string; userId: string; deptCode: string; demo: boolean; batch: string | null }[] = [];
   for (let i = 0; i < 54; i++) {
-    const d = depts[i % 6];
+    const d = depts[i % STUDENT_DEPTS];
     const demo = i === 0;
     const u = await mkUser(demo ? 'student@smartcampus.com' : `student${i}@smartcampus.com`, demo ? 'Susanth Kumar' : fullName(), 'STUDENT');
-    const st = await prisma.student.create({ data: { userId: u.id, rollNo: `${d.code}21${pad(Math.floor(i / 6) + 1)}`, departmentId: d.id, semester: 5, section: i % 2 ? 'B' : 'A' } });
-    students.push({ id: st.id, userId: u.id, deptCode: d.code, demo });
+    // Only the CSE H-Section is split into lab batches (demo student = B-1; the rest alternate)
+    const batch = d.code === 'CSE' ? (Math.floor(i / STUDENT_DEPTS) % 2 ? 'B-2' : 'B-1') : null;
+    const st = await prisma.student.create({ data: { userId: u.id, rollNo: `${d.code}21${pad(Math.floor(i / 6) + 1)}`, departmentId: d.id, semester: 5, section: d.code === 'CSE' ? H_SECTION.section : i % 2 ? 'B' : 'A', batch } });
+    students.push({ id: st.id, userId: u.id, deptCode: d.code, demo, batch });
   }
 
   // ---- Enrollments, attendance, marks
   const timetable = await prisma.timetable.findMany();
-  const daysByCourse = new Map<string, Set<number>>();
-  timetable.forEach((t) => daysByCourse.set(t.courseId, (daysByCourse.get(t.courseId) ?? new Set()).add(t.dayOfWeek)));
-  const SUSANTH_BASE = [0.92, 0.87, 0.81, 0.9, 0.85, 0.88];
+  // A student only attends the sessions of their own lab batch (section "ALL" = the whole class)
+  const slotsByCourse = new Map<string, { day: number; section: string }[]>();
+  timetable.forEach((t) => slotsByCourse.set(t.courseId, [...(slotsByCourse.get(t.courseId) ?? []), { day: t.dayOfWeek, section: t.section }]));
+  const attendsOn = (courseId: string, dayOfWeek: number, batch: string | null) =>
+    (slotsByCourse.get(courseId) ?? []).some((x) => x.day === dayOfWeek && (x.section === 'ALL' || x.section === batch));
+  const SUSANTH_BASE = [0.92, 0.87, 0.81, 0.9, 0.85, 0.88, 0.94, 0.79, 0.91, 0.86, 0.9];
 
   for (const st of students) {
     for (const c of courses.filter((c) => c.deptCode === st.deptCode)) {
       await prisma.enrollment.create({ data: { studentId: st.id, courseId: c.id } });
-      const base = st.demo ? SUSANTH_BASE[c.index] : between(0.72, 0.97);
+      const base = st.demo ? SUSANTH_BASE[c.index % SUSANTH_BASE.length] : between(0.72, 0.97);
 
       const rows: { studentId: string; courseId: string; date: Date; status: AttendanceStatus }[] = [];
       for (let off = -35; off <= -1; off++) {
         const date = day(off);
-        if (!daysByCourse.get(c.id)?.has(date.getUTCDay())) continue;
+        if (!attendsOn(c.id, date.getUTCDay(), st.batch)) continue;
         const r = rand();
         rows.push({ studentId: st.id, courseId: c.id, date, status: r < base ? 'PRESENT' : r < base + 0.04 ? 'LATE' : 'ABSENT' });
       }
       await prisma.attendance.createMany({ data: rows });
+
+      if (!c.graded) continue; // training / non-credit subjects have attendance but no marks
 
       const quality = st.demo ? 0.84 : between(0.45, 0.95);
       const part = (max: number) => Math.round(Math.min(max, max * (quality + between(-0.12, 0.1))) * 10) / 10;
@@ -143,7 +180,7 @@ async function main() {
   // ---- Complaints (12) with timelines
   const FLOW: ComplaintStatus[] = ['SUBMITTED', 'UNDER_REVIEW', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'];
   const TEMPLATES: [string, string, ComplaintCategory, string, Priority][] = [
-    ['Projector not working in C-204', 'The projector in C-204 shuts off after ten minutes, which disrupts lectures.', 'CLASSROOM', 'Block C, Room C-204', 'HIGH'],
+    ['Projector not working in Room 225', 'The projector in Room 225 shuts off after ten minutes, which disrupts lectures.', 'CLASSROOM', 'CSE Block, Room 225', 'HIGH'],
     ['Wi-Fi very slow in the library', 'Connection drops repeatedly on the second floor reading area.', 'INTERNET', 'Library, Floor 2', 'MEDIUM'],
     ['Water leakage in hostel washroom', 'Tap and pipe leaking near the third-floor washroom.', 'WATER', 'Boys Hostel, Floor 3', 'HIGH'],
     ['Flickering lights in lab', 'Three tube lights flicker constantly in Networks Lab.', 'ELECTRICITY', 'Block B, Networks Lab', 'MEDIUM'],
@@ -300,11 +337,12 @@ async function main() {
       { userId: students[0].userId, type: 'MARKS', title: 'Marks published', message: `Marks for ${dsCourse.name} have been published.`, link: '/academics/marks', read: true, createdAt: ago(40) },
       { userId: facultyByDept.CSE[0].userId, type: 'ANNOUNCEMENT', title: 'New announcement', message: 'Marks entry deadline for internals', link: `/campus/announcements/${announcements[5].id}`, createdAt: ago(2) },
       { userId: adminUser.id, type: 'COMPLAINT', title: 'New complaint', message: 'Wi-Fi very slow in the library', link: '/campus/complaints', createdAt: ago(4) },
-      { userId: staff[0].userId, type: 'TASK', title: 'New task assigned', message: 'Projector not working in C-204', link: '/tasks', createdAt: ago(6) },
+      { userId: staff[0].userId, type: 'TASK', title: 'New task assigned', message: 'Projector not working in Room 225', link: '/tasks', createdAt: ago(6) },
     ],
   });
 
   console.log(`Seeded: ${students.length} students, ${Object.values(facultyByDept).flat().length} faculty, ${staff.length} staff, ${courses.length} courses.`);
+  console.log(`Demo student is in ${H_SECTION.programme} ${H_SECTION.department} Section ${H_SECTION.section} (Room ${H_SECTION.room}), using the real timetable.`);
   console.log('Demo logins (password for all: Password@123):');
   console.log('  student@smartcampus.com | faculty@smartcampus.com | admin@smartcampus.com | staff@smartcampus.com');
 }

@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { asyncHandler, HttpError } from '../utils/errors';
 import { prisma } from '../utils/prisma';
+import { intParam, textParam } from '../utils/query';
 
 const include = {
   department: { select: { id: true, code: true, name: true } },
@@ -11,9 +12,11 @@ const include = {
 
 export const listCourses = asyncHandler(async (req, res) => {
   const u = req.user!;
-  const { q, semester, departmentId, mine } = req.query as Record<string, string | undefined>;
+  const { departmentId, mine } = req.query as Record<string, string | undefined>;
+  const q = textParam(req.query.q);
+  const semester = intParam(req.query.semester, 'semester', { min: 1, max: 12 });
   const where: Prisma.CourseWhereInput = {
-    ...(semester && { semester: Number(semester) }),
+    ...(semester !== undefined && { semester }),
     ...(departmentId && { departmentId }),
     ...(q && { OR: [{ code: { contains: q, mode: 'insensitive' } }, { name: { contains: q, mode: 'insensitive' } }] }),
     ...(mine === 'true' && u.role === 'STUDENT' && { enrollments: { some: { studentId: u.profileId } } }),

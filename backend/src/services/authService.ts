@@ -13,6 +13,7 @@ export function signToken(u: UserWithProfiles) {
   return jwt.sign({ role: u.role, profileId: profileIdOf(u) }, env.jwtSecret, {
     subject: u.id,
     expiresIn: env.jwtExpiresIn as jwt.SignOptions['expiresIn'],
+    algorithm: 'HS256',
   });
 }
 

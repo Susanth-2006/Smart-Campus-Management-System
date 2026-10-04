@@ -9,6 +9,8 @@ interface AuthCtx {
   logout: () => void;
 }
 const Ctx = createContext<AuthCtx | null>(null);
+/** Exported so tests can render pages with a chosen user. */
+export const AuthContext = Ctx;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);

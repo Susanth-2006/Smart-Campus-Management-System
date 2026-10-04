@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { asyncHandler, HttpError } from '../utils/errors';
 import { prisma } from '../utils/prisma';
 import { notifyUsers } from '../utils/notify';
+import { oneOf, textParam } from '../utils/query';
 
 const withRead = (userId: string) => ({ author: { select: { user: { select: { name: true } } } }, reads: { where: { userId }, select: { id: true } } }) as const;
 const shape = <T extends { reads: unknown[] }>(a: T) => {
@@ -12,10 +13,12 @@ const shape = <T extends { reads: unknown[] }>(a: T) => {
 
 export const listAnnouncements = asyncHandler(async (req, res) => {
   const u = req.user!;
-  const { category, q, unread } = req.query as Record<string, string | undefined>;
+  const { unread } = req.query as Record<string, string | undefined>;
+  const q = textParam(req.query.q);
+  const category = req.query.category === 'ALL' ? undefined : oneOf(req.query.category, Object.values(AnnouncementCategory), 'category');
   const where: Prisma.AnnouncementWhereInput = {
     ...(u.role !== 'ADMIN' && { audience: { has: u.role } }),
-    ...(category && category !== 'ALL' && { category: category as AnnouncementCategory }),
+    ...(category && { category }),
     ...(q && { OR: [{ title: { contains: q, mode: 'insensitive' } }, { body: { contains: q, mode: 'insensitive' } }] }),
     ...(unread === 'true' && { reads: { none: { userId: u.id } } }),
   };

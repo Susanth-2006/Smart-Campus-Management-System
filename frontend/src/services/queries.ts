@@ -3,7 +3,8 @@ import { api } from './api';
 import { addDays, today } from '../utils/format';
 import { CalendarEvent, Announcement, AttendanceRecord, AttendanceSummary, Complaint, MarkRecord, TimetableEntry } from '../types';
 
-export const useTimetable = () => useQuery({ queryKey: ['timetable'], queryFn: () => api<TimetableEntry[]>('/timetable') });
+/** scope 'section' (students): the whole class sheet including every lab batch. Default: my own batch only. */
+export const useTimetable = (scope: 'mine' | 'section' = 'mine') => useQuery({ queryKey: ['timetable', scope], queryFn: () => api<TimetableEntry[]>(scope === 'section' ? '/timetable?scope=section' : '/timetable') });
 export const useAttendanceSummary = () => useQuery({ queryKey: ['attendance', 'summary'], queryFn: () => api<AttendanceSummary>('/attendance/summary') });
 export const useAttendanceRecords = (courseId?: string, from?: string, to?: string) =>
   useQuery({
