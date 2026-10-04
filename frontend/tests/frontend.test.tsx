@@ -14,6 +14,7 @@ import { H_COURSES, H_SLOTS, slotTimes } from '../../backend/prisma/hSection';
 import { buildGrid, isNow, toneOf, visibleDays } from '../src/utils/timetableLayout';
 import { buildIcs, mondayOf } from '../src/utils/ics';
 import type { TimetableEntry } from '../src/types';
+import { diagnoseApi } from '../src/services/diagnose';
 
 let passed = 0;
 const queue: [string, () => void | Promise<void>][] = [];
@@ -80,6 +81,63 @@ t('ICS: Monday 09:00–12:40 Training lands on the right date and time (week of 
 });
 t('ICS: UIDs are unique', () => { const uids = buildIcs(SECTION).match(/UID:.+/g)!; assert.equal(new Set(uids).size, SECTION.length); });
 t('mondayOf returns the Monday of any weekday, including Sunday', () => { for (const d of [5, 6, 7, 8, 9, 10, 11]) assert.equal(mondayOf(new Date(2026, 9, d)).getDate(), 5, `Oct ${d}`); });
+
+// ------------------------------------------------------------------ "why can't I log in?" diagnostics
+const resp = (status: number, body: string, type = 'application/json') => new Response(body, { status, headers: { 'content-type': type } });
+const base = { isProd: true, usingDefaultBase: false, origin: 'https://campus.vercel.app', timeoutMs: 500 };
+const API = 'https://api.vercel.app/api';
+const diag = (fetchImpl: typeof fetch, over: Partial<Parameters<typeof diagnoseApi>[1]> = {}) => diagnoseApi(API, { ...base, ...over, fetchImpl });
+const code = (r: any) => (r.kind === 'problem' ? r.code : r.kind);
+
+t('diagnose: healthy API → ok (and the URL called is <base>/health)', async () => {
+  let called = ''; const r = await diag((async (u: any) => { called = String(u); return resp(200, '{"status":"ok","db":"ok","seeded":true}'); }) as any);
+  assert.equal(code(r), 'ok'); assert.equal(called, `${API}/health`);
+});
+t('diagnose: site built without VITE_API_URL → not-configured (production only)', async () => {
+  let calls = 0; const f = (async () => { calls++; return resp(200, '{}'); }) as any;
+  assert.equal(code(await diag(f, { usingDefaultBase: true })), 'not-configured'); assert.equal(calls, 0, 'must not call localhost from a deployed site');
+  assert.equal(code(await diag((async () => resp(200, '{"status":"ok","db":"ok","seeded":true}')) as any, { usingDefaultBase: true, isProd: false })), 'ok', 'dev server on a laptop is fine');
+});
+t('diagnose: Vercel login wall (401 HTML) → protected', async () => assert.equal(code(await diag((async () => resp(401, '<html>Authentication Required</html>', 'text/html')) as any)), 'protected'));
+t('diagnose: 403 HTML → protected; 404 HTML → wrong-url; 502 HTML → bad-response', async () => {
+  assert.equal(code(await diag((async () => resp(403, '<html/>', 'text/html')) as any)), 'protected');
+  assert.equal(code(await diag((async () => resp(404, '<html/>', 'text/html')) as any)), 'wrong-url');
+  assert.equal(code(await diag((async () => resp(502, 'Bad gateway', 'text/plain')) as any)), 'bad-response');
+});
+t('diagnose: JSON that is not our health shape is not trusted', async () => assert.equal(code(await diag((async () => resp(200, '{"hello":"world"}')) as any)), 'db'));
+t('diagnose: database down → db; connected but empty → empty-db', async () => {
+  assert.equal(code(await diag((async () => resp(503, '{"status":"degraded","db":"unreachable"}')) as any)), 'db');
+  assert.equal(code(await diag((async () => resp(200, '{"status":"ok","db":"ok","seeded":false}')) as any)), 'empty-db');
+});
+t('diagnose: CORS / login wall without headers (cors fetch fails, no-cors succeeds) → blocked, and names this site\'s origin', async () => {
+  const f = (async (_u: any, init: any) => { if (init?.mode === 'no-cors') return resp(0 || 200, ''); throw new TypeError('Failed to fetch'); }) as any;
+  const r: any = await diag(f); assert.equal(code(r), 'blocked'); assert.ok(r.hint.includes('https://campus.vercel.app'), 'hint should tell which origin to allow');
+});
+t('diagnose: nothing answers at all → unreachable', async () => assert.equal(code(await diag((async () => { throw new TypeError('Failed to fetch'); }) as any)), 'unreachable'));
+t('diagnose: a hanging server times out instead of spinning forever', async () => {
+  const hang = ((_u: any, init: any) => new Promise((_res, rej) => init?.signal?.addEventListener('abort', () => rej(new Error('aborted'))))) as any;
+  const started = Date.now(); const r = await diag(hang, { timeoutMs: 80 }); assert.equal(code(r), 'unreachable'); assert.ok(Date.now() - started < 2000);
+});
+t('diagnose: trailing slash on the base URL is handled', async () => {
+  let called = ''; await diagnoseApi(`${API}/`, { ...base, fetchImpl: (async (u: any) => { called = String(u); return resp(200, '{"status":"ok","db":"ok","seeded":true}'); }) as any }); assert.equal(called, `${API}/health`);
+});
+
+t('api(): network failure, HTML error pages and JSON errors each give a useful message', async () => {
+  const store: Record<string, string> = {};
+  (globalThis as any).localStorage = { getItem: (k: string) => store[k] ?? null, setItem: (k: string, v: string) => { store[k] = v; }, removeItem: (k: string) => { delete store[k]; } };
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const vite = await createServer({ root, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent', optimizeDeps: { noDiscovery: true, include: [] } });
+  const realFetch = globalThis.fetch;
+  try {
+    const { api, ApiError } = (await vite.ssrLoadModule('/src/services/api.ts')) as any;
+    const msg = async (impl: any) => { (globalThis as any).fetch = impl; try { await api('/auth/login', { method: 'POST', json: {} }); return 'NO ERROR'; } catch (e: any) { assert.ok(e instanceof ApiError); return `${e.status}|${e.message}`; } };
+    assert.match(await msg(async () => { throw new TypeError('Failed to fetch'); }), /^0\|Cannot reach the server/);
+    assert.match(await msg(async () => resp(401, '<html>login wall</html>', 'text/html')), /^401\|The server returned an unexpected response \(HTTP 401\)/);
+    assert.equal(await msg(async () => resp(401, '{"message":"Invalid email or password"}')), '401|Invalid email or password');
+    assert.equal(await msg(async () => resp(500, '{}')), '500|Request failed');
+    assert.equal(await msg(async () => resp(400, '{"message":"Validation failed","issues":[]}')), '400|Validation failed');
+  } finally { (globalThis as any).fetch = realFetch; await vite.close(); }
+});
 
 // ------------------------------------------------------------------ real page render
 t('Timetable page renders the real H-Section sheet (student view)', async () => {

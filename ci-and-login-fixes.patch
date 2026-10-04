@@ -1,0 +1,437 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index b4245ac..23ec1d2 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -32,8 +32,8 @@ jobs:
+       PORT: '4000'
+       STORAGE: ${{ matrix.storage }}
+     steps:
+-      - uses: actions/checkout@v4
+-      - uses: actions/setup-node@v4
++      - uses: actions/checkout@v5
++      - uses: actions/setup-node@v5
+         with: { node-version: 22, cache: npm, cache-dependency-path: '**/package-lock.json' }
+ 
+       - name: Install
+diff --git a/DEPLOY.md b/DEPLOY.md
+new file mode 100644
+index 0000000..1bcb294
+--- /dev/null
++++ b/DEPLOY.md
+@@ -0,0 +1,127 @@
++# Deploying to Vercel
++
++You will create **three things**: a free PostgreSQL database, the **backend** (API) and the **frontend** (website). The backend and frontend are two separate Vercel projects that come from the same GitHub repo. About 20 minutes the first time.
++
++```
++ Browser ──► Frontend (Vercel project 1, folder `frontend`)
++                │  calls
++                ▼
++             Backend  (Vercel project 2, folder `backend`)  ──►  PostgreSQL (Neon)
++```
++
++> **Why two projects?** Vercel runs backends as short-lived *serverless functions*, not as one always-on server. The project is already prepared for that: the API lives in `backend/api/index.ts`, uploaded files are stored in the database (Vercel's disk is not persistent), and Prisma runs without a native engine.
++
++---
++
++## Step 0 — Put the code on GitHub
++Push this repo to GitHub (`.env` files are already git-ignored, so no secrets leave your machine).
++
++## Step 1 — Create the database (Neon, free)
++1. Go to **vercel.com → Storage** (or the Marketplace) → **Neon** → create a database. Pick a region close to your users (for Hyderabad: Singapore).
++2. Neon gives you two connection strings. Copy both:
++   - **Pooled** (host contains `-pooler`) → used by the running website.
++   - **Direct / unpooled** → used once, from your laptop, to create the tables.
++3. Both end with `?sslmode=require`. Keep that part.
++
++## Step 2 — Create the tables and demo data (from your laptop, once)
++```bash
++cd backend
++npm install
++export DATABASE_URL="<the DIRECT / unpooled connection string>"
++npx prisma migrate deploy                 # creates every table
++SEED_PASSWORD="choose-a-password" npm run db:seed   # loads the demo campus
++```
++- ⚠️ `db:seed` **erases everything** in that database first. Run it only on a fresh database.
++- `SEED_PASSWORD` is the password for all demo accounts. If you leave it out it is `Password@123`, which everybody on the internet can guess. Choose your own for anything you share publicly.
++- On Windows PowerShell use `$env:DATABASE_URL="..."` and `$env:SEED_PASSWORD="..."` instead of `export`.
++
++## Step 3 — Deploy the backend
++1. Vercel → **Add New… → Project** → import your GitHub repo.
++2. **Root Directory:** `backend`. Framework Preset: **Other**. Leave the build settings as they are.
++3. **Environment Variables:**
++
++| Name | Value |
++|---|---|
++| `DATABASE_URL` | the **pooled** Neon connection string |
++| `JWT_SECRET` | a long random string, e.g. run `openssl rand -base64 48` |
++| `CLIENT_ORIGIN` | `https://YOUR-FRONTEND.vercel.app` (you do not know it yet; put a placeholder, fix it in Step 5) |
++
++4. Deploy. When it finishes open `https://YOUR-BACKEND.vercel.app/api/health`. You should see `{"status":"ok","db":"ok"}`.
++   - `db: unreachable` → the `DATABASE_URL` is wrong, or you pasted the string without `?sslmode=require`.
++   - Vercel sets `NODE_ENV=production` for you, so the API refuses to start with a weak `JWT_SECRET` (this is on purpose).
++
++## Step 4 — Deploy the frontend
++1. **Add New… → Project** → the same repo again.
++2. **Root Directory:** `frontend`. Framework Preset: **Vite** (detected automatically).
++3. **Environment Variables:**
++
++| Name | Value |
++|---|---|
++| `VITE_API_URL` | `https://YOUR-BACKEND.vercel.app/api` (must end with `/api`) |
++| `VITE_DEMO_LOGINS` | optional: `false` hides the one-click demo-login buttons |
++| `VITE_DEMO_PASSWORD` | only if you changed `SEED_PASSWORD`, so the demo buttons still work |
++
++4. Deploy and copy the website URL.
++
++## Step 4b — Turn OFF Vercel's login wall (do this for BOTH projects)
++By default Vercel puts **Deployment Protection** in front of your deployments: visitors (and your website's own requests to the API) get Vercel's sign-in page instead of your app. If you skip this, the website loads for you but **login fails**, because the browser cannot read the API's answer.
++
++For each project (backend **and** frontend): **Settings → Deployment Protection → Vercel Authentication → Disabled** (or "Only Preview Deployments"), then **Save**.
++
++Also: share the project's **production domain** (for example `smart-campus-management-system.vercel.app`, shown at the top of the project page), not the long per-deployment links such as `…-9owiyhmjj.vercel.app`. Those long links are the ones that stay protected.
++
++## Step 5 — Tell the backend where the website is
++Backend project → **Settings → Environment Variables** → set `CLIENT_ORIGIN` to the frontend URL (no trailing slash), then **Deployments → ⋯ → Redeploy**. Without this the browser blocks the website's requests ("CORS error").
++
++- Several sites? Separate them with commas: `https://a.vercel.app,https://b.com`
++- Vercel *preview* URLs change on every push. Allow them with a wildcard: `https://smart-campus-*.vercel.app` (the `*` matches exactly one part of the hostname).
++
++## Step 6 — Check it works
++- [ ] Open the website, log in as the student, open **Timetable** (Saturday + lab batches should show).
++- [ ] Faculty → open a course → **Materials** → upload a small PDF → open it as the student.
++- [ ] Student → **New complaint** with a photo.
++
++---
++
++## "Login fails" — find out why in 2 minutes
++The login page now checks the server by itself. If something is wrong, a **red box appears above the form** that names the problem and says what to change, and shows the API address the site is using. If everything is fine you see a small green "Server connected".
++
++You can also test the backend directly. Open `https://YOUR-BACKEND.vercel.app/api/health` in a private/incognito window:
++
++| You see | Meaning | Fix |
++|---|---|---|
++| `{"status":"ok","db":"ok","seeded":true}` | Backend is healthy | Problem is on the frontend: check `VITE_API_URL` (Step 4) and `CLIENT_ORIGIN` (Step 5) |
++| A Vercel **sign-in page** | Deployment Protection is on | Step 4b |
++| `{"status":"ok","db":"ok","seeded":false}` | Database is connected but empty | Run Step 2 (`migrate deploy`, then `db:seed`) |
++| `{"status":"degraded","db":"unreachable"}` | Cannot reach the database | Fix `DATABASE_URL` (pooled string, ending `?sslmode=require`), redeploy |
++| `404 NOT_FOUND` | Wrong project settings | Backend project's **Root Directory** must be `backend` |
++| `500 FUNCTION_INVOCATION_FAILED` | The function crashed on start | Backend project → **Logs**. Usually a missing or short (< 32 characters) `JWT_SECRET`, or no `DATABASE_URL` |
++
++Still stuck? In the browser press **F12 → Network**, click **Sign in**, click the red `login` request, and look at its **Status** and **Response**. Send me those two things.
++
++## Things that behave differently on Vercel (good to know)
++| Topic | What happens | Why |
++|---|---|---|
++| **Uploads** | Stored in the database. Max **3 MB** per file. | Vercel rejects request bodies above 4.5 MB and its disk is not persistent. For bigger files, move to Vercel Blob or S3. |
++| **Free database size** | Neon's free plan is about 0.5 GB. | Files count towards it. Uploads are limited to 15 per 15 minutes per visitor by default (`UPLOAD_RATE_LIMIT`). |
++| **Rate limits** | Counted per server instance, not globally. | Fine for a college project; for heavy traffic use a shared store such as Upstash Redis. |
++| **Cold starts** | The first request after a quiet period can take 1–3 s. | Normal for serverless. |
++| **Hobby plan** | Free, for non-commercial use. | A college project / portfolio is fine. |
++| **Demo accounts** | Anyone who can see the login page can use the demo buttons. | Fine for a showcase. For private use: `VITE_DEMO_LOGINS=false` + your own `SEED_PASSWORD`, then create real users. |
++
++## Troubleshooting
++| Symptom | Fix |
++|---|---|
++| Site works for you but nobody else can open it | Deployment Protection is on (Step 4b), or you shared a per-deployment link instead of the production domain. |
++| Browser console: *blocked by CORS policy* | `CLIENT_ORIGIN` on the backend does not exactly match the website URL (check `https`, no trailing slash), then redeploy the backend. |
++| Login says *Cannot reach the server* or *unexpected response* | See the table above; the red box on the login page says which one. |
++| Login says *Request failed* / network error | `VITE_API_URL` is wrong or missing `/api`. Environment variables are read at **build** time, so redeploy the frontend after changing it. |
++| `/api/health` shows `db: unreachable` | Wrong `DATABASE_URL`, or the database is paused (Neon free databases sleep; the first request wakes them). |
++| Refreshing a page like `/timetable` gives 404 | Frontend Root Directory is not `frontend`, so `frontend/vercel.json` is not used. |
++| Build fails on `prisma generate` | Make sure Root Directory is `backend`. The `postinstall` script generates the client. |
++| *This link is invalid or has expired* when opening a file | Signed file links last 1 hour. Reload the page. |
++| Deploy works but every request is 500 | Open the project → **Logs**. A missing `JWT_SECRET` or `DATABASE_URL` is the usual cause. |
++
++## Updating later
++- Push to GitHub → both projects redeploy automatically.
++- **Changed `schema.prisma`?** Create the migration locally (`npx prisma migrate dev`), commit it, then apply it to the live database from your laptop with the direct URL: `npx prisma migrate deploy`.
+diff --git a/backend/src/app.ts b/backend/src/app.ts
+index a33e68c..7994ada 100644
+--- a/backend/src/app.ts
++++ b/backend/src/app.ts
+@@ -40,7 +40,12 @@ app.get('/uploads/:name', async (req, res, next) => {
+ });
+ 
+ app.get('/api/health', async (_req, res) => {
+-  try { await prisma.$queryRaw`SELECT 1`; res.json({ status: 'ok', db: 'ok' }); }
++  try {
++    await prisma.$queryRaw`SELECT 1`;
++    // `seeded: false` = connected, but the tables are empty or missing (migrations / seed not run yet)
++    const seeded = await prisma.user.count().then((n) => n > 0).catch(() => false);
++    res.json({ status: 'ok', db: 'ok', seeded });
++  }
+   catch { res.status(503).json({ status: 'degraded', db: 'unreachable' }); }
+ });
+ app.use('/api', routes);
+diff --git a/frontend/src/pages/Login.tsx b/frontend/src/pages/Login.tsx
+index c40e33c..f39b295 100644
+--- a/frontend/src/pages/Login.tsx
++++ b/frontend/src/pages/Login.tsx
+@@ -1,9 +1,11 @@
+-import { FormEvent, useState } from 'react';
++import { FormEvent, useEffect, useState } from 'react';
+ import { Navigate, useNavigate } from 'react-router-dom';
+ import { GraduationCap } from 'lucide-react';
+ import { useAuth } from '../hooks/useAuth';
+ import { Role } from '../types';
+ import { ROLE_LABEL } from '../utils/navConfig';
++import { API_BASE, API_BASE_IS_DEFAULT } from '../services/api';
++import { ApiStatus, diagnoseApi } from '../services/diagnose';
+ 
+ const DEMOS: { label: string; role: Role; email: string }[] = [
+   { label: 'Student Demo', role: 'STUDENT', email: 'student@smartcampus.com' },
+@@ -24,6 +26,12 @@ export default function Login() {
+   const [role, setRole] = useState<Role>('STUDENT');
+   const [error, setError] = useState('');
+   const [busy, setBusy] = useState(false);
++  const [status, setStatus] = useState<ApiStatus>({ kind: 'checking' });
++  useEffect(() => {
++    let live = true;
++    diagnoseApi(API_BASE, { isProd: import.meta.env.PROD, usingDefaultBase: API_BASE_IS_DEFAULT, origin: window.location.origin }).then((s) => live && setStatus(s));
++    return () => { live = false; };
++  }, []);
+   if (user) return <Navigate to="/dashboard" replace />;
+ 
+   const submit = async (e?: FormEvent, creds = { email, password, role }) => {
+@@ -50,7 +58,15 @@ export default function Login() {
+       <section className="flex items-center justify-center p-6">
+         <div className="card w-full max-w-md p-8">
+           <h2 className="font-display text-3xl">Welcome back</h2>
+-          <p className="mb-6 mt-1 text-sm text-slate">Sign in to continue to your campus.</p>
++          <p className="mb-4 mt-1 text-sm text-slate">Sign in to continue to your campus.</p>
++          {status.kind === 'problem' && (
++            <div role="alert" className="mb-4 rounded-xl border border-clay/40 bg-peach/25 p-4 text-sm">
++              <p className="font-semibold text-clay">{status.title}</p>
++              <p className="mt-1 text-navy/80">{status.hint}</p>
++              <p className="mt-2 break-all text-xs text-slate">API address used by this site: {API_BASE}</p>
++            </div>
++          )}
++          {status.kind === 'ok' && <p className="mb-4 flex items-center gap-2 text-xs text-slate"><span className="h-2 w-2 rounded-full bg-green-500" aria-hidden="true" />Server connected</p>}
+           <form onSubmit={submit} className="space-y-4" noValidate>
+             <div>
+               <label htmlFor="role" className="mb-1 block text-sm font-medium">I am a</label>
+diff --git a/frontend/src/services/api.ts b/frontend/src/services/api.ts
+index acaf936..3a6bd88 100644
+--- a/frontend/src/services/api.ts
++++ b/frontend/src/services/api.ts
+@@ -1,4 +1,9 @@
+-const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:4000/api';
++const DEFAULT_BASE = 'http://localhost:4000/api';
++const BASE: string = import.meta.env.VITE_API_URL ?? DEFAULT_BASE;
++/** Where the API lives (VITE_API_URL). Exposed so the login page can check it. */
++export const API_BASE = BASE;
++/** True when VITE_API_URL was never set: fine on your laptop, a mistake on a deployed site. */
++export const API_BASE_IS_DEFAULT = !import.meta.env.VITE_API_URL;
+ export const TOKEN_KEY = 'sc_token';
+ 
+ export class ApiError extends Error {
+@@ -7,14 +12,23 @@ export class ApiError extends Error {
+ 
+ export async function api<T = unknown>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
+   const token = localStorage.getItem(TOKEN_KEY);
+-  const res = await fetch(`${BASE}${path}`, {
+-    ...init,
+-    headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }), ...init.headers },
+-    body: init.json !== undefined ? JSON.stringify(init.json) : init.body,
+-  });
++  let res: Response;
++  try {
++    res = await fetch(`${BASE}${path}`, {
++      ...init,
++      headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }), ...init.headers },
++      body: init.json !== undefined ? JSON.stringify(init.json) : init.body,
++    });
++  } catch {
++    // fetch only throws when no response could be read: server down, wrong URL, or blocked by CORS / a login wall
++    throw new ApiError(0, `Cannot reach the server${BASE === DEFAULT_BASE && !import.meta.env.DEV ? ' (this site was built without VITE_API_URL)' : ''}. Check your connection; if you run this site, see the server status shown on the login page.`);
++  }
+   if (res.status === 204) return undefined as T;
+-  const data = await res.json().catch(() => ({}));
++  const text = await res.text();
++  let data: any = {};
++  let isJson = true;
++  try { data = text ? JSON.parse(text) : {}; } catch { isJson = false; /* an HTML error page from the platform, not from our API */ }
+   if (res.status === 401 && token) { localStorage.removeItem(TOKEN_KEY); window.dispatchEvent(new Event('sc:logout')); }
+-  if (!res.ok) throw new ApiError(res.status, data.message ?? 'Request failed', data.issues);
++  if (!res.ok) throw new ApiError(res.status, data.message ?? (isJson ? 'Request failed' : `The server returned an unexpected response (HTTP ${res.status}). If this is your own deployment, see the server status on the login page.`), data.issues);
+   return data as T;
+ }
+diff --git a/frontend/src/services/diagnose.ts b/frontend/src/services/diagnose.ts
+new file mode 100644
+index 0000000..9c5ca18
+--- /dev/null
++++ b/frontend/src/services/diagnose.ts
+@@ -0,0 +1,67 @@
++/**
++ * "Is my API reachable and healthy?" for the login page.
++ * Pure function (no React, no import.meta) so it can be unit-tested with a fake fetch.
++ * The problems it names are the ones people really hit when deploying frontend and backend separately.
++ */
++export type ApiStatus =
++  | { kind: 'checking' }
++  | { kind: 'ok' }
++  | { kind: 'problem'; code: 'not-configured' | 'unreachable' | 'blocked' | 'protected' | 'wrong-url' | 'bad-response' | 'db' | 'empty-db'; title: string; hint: string };
++
++interface Opts { fetchImpl?: typeof fetch; isProd: boolean; usingDefaultBase: boolean; origin: string; timeoutMs?: number }
++
++const problem = (code: Extract<ApiStatus, { kind: 'problem' }>['code'], title: string, hint: string): ApiStatus => ({ kind: 'problem', code, title, hint });
++
++async function withTimeout<T>(fn: (signal: AbortSignal) => Promise<T>, ms: number): Promise<T> {
++  const c = new AbortController(); const id = setTimeout(() => c.abort(), ms);
++  try { return await fn(c.signal); } finally { clearTimeout(id); }
++}
++
++export async function diagnoseApi(base: string, o: Opts): Promise<ApiStatus> {
++  const f = o.fetchImpl ?? fetch, ms = o.timeoutMs ?? 12_000, url = `${base.replace(/\/$/, '')}/health`;
++
++  if (o.isProd && o.usingDefaultBase) {
++    return problem('not-configured', 'This site does not know where its server is.',
++      'The frontend was built without VITE_API_URL. In Vercel: frontend project → Settings → Environment Variables → add VITE_API_URL = https://YOUR-BACKEND.vercel.app/api, then Redeploy (the value is baked in at build time).');
++  }
++
++  let res: Response;
++  try {
++    res = await withTimeout((signal) => f(url, { signal, headers: { Accept: 'application/json' } }), ms);
++  } catch {
++    // Could not read any response. A "no-cors" request tells us whether something is answering at all.
++    const answers = await withTimeout((signal) => f(url, { mode: 'no-cors', signal }), ms).then(() => true, () => false);
++    return answers
++      ? problem('blocked', 'The server answered, but the browser blocked the reply.',
++          `Two usual causes: (1) Vercel "Deployment Protection" is switched on for the BACKEND project: turn it off under Settings → Deployment Protection. (2) CORS: the backend's CLIENT_ORIGIN must contain exactly ${o.origin} (then redeploy the backend).`)
++      : problem('unreachable', 'Cannot reach the server.',
++          `Nothing answered at ${url}. Check that VITE_API_URL is right (it must end with /api), that the backend deployment is live, and that you are online.`);
++  }
++
++  const type = res.headers.get('content-type') ?? '';
++  let body: any = null;
++  if (type.includes('json')) { try { body = await res.json(); } catch { /* handled below */ } }
++
++  if (!body || typeof body !== 'object') {
++    if (res.status === 401 || res.status === 403) {
++      return problem('protected', 'The backend is behind a Vercel login wall.',
++        'Vercel answered with its own sign-in page instead of the API. Open the BACKEND project → Settings → Deployment Protection → set Vercel Authentication to Disabled (or "Only Preview Deployments"), and use the project\'s production domain.');
++    }
++    if (res.status === 404) {
++      return problem('wrong-url', 'The API was not found at this address.',
++        `${url} returned 404. VITE_API_URL should be the BACKEND address ending in /api (not the frontend's own address).`);
++    }
++    return problem('bad-response', `The server sent an unexpected reply (HTTP ${res.status}).`,
++      'It did not look like our API. Open the backend project → Logs in Vercel to see the error (a missing JWT_SECRET or DATABASE_URL is the usual cause).');
++  }
++
++  if (body.status !== 'ok' || body.db !== 'ok') {
++    return problem('db', 'The server is running but cannot reach its database.',
++      'Check DATABASE_URL on the backend project (use the pooled Neon string, ending ?sslmode=require), then redeploy. A paused free database wakes up on the next request.');
++  }
++  if (body.seeded === false) {
++    return problem('empty-db', 'The database is connected but empty.',
++      'Create the tables and demo data once from your computer: in the backend folder run "npx prisma migrate deploy" then "npm run db:seed" with DATABASE_URL set to your Neon DIRECT connection string.');
++  }
++  return { kind: 'ok' };
++}
+diff --git a/frontend/tests/frontend.test.tsx b/frontend/tests/frontend.test.tsx
+index e7377ac..c6617e5 100644
+--- a/frontend/tests/frontend.test.tsx
++++ b/frontend/tests/frontend.test.tsx
+@@ -14,6 +14,7 @@ import { H_COURSES, H_SLOTS, slotTimes } from '../../backend/prisma/hSection';
+ import { buildGrid, isNow, toneOf, visibleDays } from '../src/utils/timetableLayout';
+ import { buildIcs, mondayOf } from '../src/utils/ics';
+ import type { TimetableEntry } from '../src/types';
++import { diagnoseApi } from '../src/services/diagnose';
+ 
+ let passed = 0;
+ const queue: [string, () => void | Promise<void>][] = [];
+@@ -81,6 +82,63 @@ t('ICS: Monday 09:00–12:40 Training lands on the right date and time (week of
+ t('ICS: UIDs are unique', () => { const uids = buildIcs(SECTION).match(/UID:.+/g)!; assert.equal(new Set(uids).size, SECTION.length); });
+ t('mondayOf returns the Monday of any weekday, including Sunday', () => { for (const d of [5, 6, 7, 8, 9, 10, 11]) assert.equal(mondayOf(new Date(2026, 9, d)).getDate(), 5, `Oct ${d}`); });
+ 
++// ------------------------------------------------------------------ "why can't I log in?" diagnostics
++const resp = (status: number, body: string, type = 'application/json') => new Response(body, { status, headers: { 'content-type': type } });
++const base = { isProd: true, usingDefaultBase: false, origin: 'https://campus.vercel.app', timeoutMs: 500 };
++const API = 'https://api.vercel.app/api';
++const diag = (fetchImpl: typeof fetch, over: Partial<Parameters<typeof diagnoseApi>[1]> = {}) => diagnoseApi(API, { ...base, ...over, fetchImpl });
++const code = (r: any) => (r.kind === 'problem' ? r.code : r.kind);
++
++t('diagnose: healthy API → ok (and the URL called is <base>/health)', async () => {
++  let called = ''; const r = await diag((async (u: any) => { called = String(u); return resp(200, '{"status":"ok","db":"ok","seeded":true}'); }) as any);
++  assert.equal(code(r), 'ok'); assert.equal(called, `${API}/health`);
++});
++t('diagnose: site built without VITE_API_URL → not-configured (production only)', async () => {
++  let calls = 0; const f = (async () => { calls++; return resp(200, '{}'); }) as any;
++  assert.equal(code(await diag(f, { usingDefaultBase: true })), 'not-configured'); assert.equal(calls, 0, 'must not call localhost from a deployed site');
++  assert.equal(code(await diag((async () => resp(200, '{"status":"ok","db":"ok","seeded":true}')) as any, { usingDefaultBase: true, isProd: false })), 'ok', 'dev server on a laptop is fine');
++});
++t('diagnose: Vercel login wall (401 HTML) → protected', async () => assert.equal(code(await diag((async () => resp(401, '<html>Authentication Required</html>', 'text/html')) as any)), 'protected'));
++t('diagnose: 403 HTML → protected; 404 HTML → wrong-url; 502 HTML → bad-response', async () => {
++  assert.equal(code(await diag((async () => resp(403, '<html/>', 'text/html')) as any)), 'protected');
++  assert.equal(code(await diag((async () => resp(404, '<html/>', 'text/html')) as any)), 'wrong-url');
++  assert.equal(code(await diag((async () => resp(502, 'Bad gateway', 'text/plain')) as any)), 'bad-response');
++});
++t('diagnose: JSON that is not our health shape is not trusted', async () => assert.equal(code(await diag((async () => resp(200, '{"hello":"world"}')) as any)), 'db'));
++t('diagnose: database down → db; connected but empty → empty-db', async () => {
++  assert.equal(code(await diag((async () => resp(503, '{"status":"degraded","db":"unreachable"}')) as any)), 'db');
++  assert.equal(code(await diag((async () => resp(200, '{"status":"ok","db":"ok","seeded":false}')) as any)), 'empty-db');
++});
++t('diagnose: CORS / login wall without headers (cors fetch fails, no-cors succeeds) → blocked, and names this site\'s origin', async () => {
++  const f = (async (_u: any, init: any) => { if (init?.mode === 'no-cors') return resp(0 || 200, ''); throw new TypeError('Failed to fetch'); }) as any;
++  const r: any = await diag(f); assert.equal(code(r), 'blocked'); assert.ok(r.hint.includes('https://campus.vercel.app'), 'hint should tell which origin to allow');
++});
++t('diagnose: nothing answers at all → unreachable', async () => assert.equal(code(await diag((async () => { throw new TypeError('Failed to fetch'); }) as any)), 'unreachable'));
++t('diagnose: a hanging server times out instead of spinning forever', async () => {
++  const hang = ((_u: any, init: any) => new Promise((_res, rej) => init?.signal?.addEventListener('abort', () => rej(new Error('aborted'))))) as any;
++  const started = Date.now(); const r = await diag(hang, { timeoutMs: 80 }); assert.equal(code(r), 'unreachable'); assert.ok(Date.now() - started < 2000);
++});
++t('diagnose: trailing slash on the base URL is handled', async () => {
++  let called = ''; await diagnoseApi(`${API}/`, { ...base, fetchImpl: (async (u: any) => { called = String(u); return resp(200, '{"status":"ok","db":"ok","seeded":true}'); }) as any }); assert.equal(called, `${API}/health`);
++});
++
++t('api(): network failure, HTML error pages and JSON errors each give a useful message', async () => {
++  const store: Record<string, string> = {};
++  (globalThis as any).localStorage = { getItem: (k: string) => store[k] ?? null, setItem: (k: string, v: string) => { store[k] = v; }, removeItem: (k: string) => { delete store[k]; } };
++  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
++  const vite = await createServer({ root, server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent', optimizeDeps: { noDiscovery: true, include: [] } });
++  const realFetch = globalThis.fetch;
++  try {
++    const { api, ApiError } = (await vite.ssrLoadModule('/src/services/api.ts')) as any;
++    const msg = async (impl: any) => { (globalThis as any).fetch = impl; try { await api('/auth/login', { method: 'POST', json: {} }); return 'NO ERROR'; } catch (e: any) { assert.ok(e instanceof ApiError); return `${e.status}|${e.message}`; } };
++    assert.match(await msg(async () => { throw new TypeError('Failed to fetch'); }), /^0\|Cannot reach the server/);
++    assert.match(await msg(async () => resp(401, '<html>login wall</html>', 'text/html')), /^401\|The server returned an unexpected response \(HTTP 401\)/);
++    assert.equal(await msg(async () => resp(401, '{"message":"Invalid email or password"}')), '401|Invalid email or password');
++    assert.equal(await msg(async () => resp(500, '{}')), '500|Request failed');
++    assert.equal(await msg(async () => resp(400, '{"message":"Validation failed","issues":[]}')), '400|Validation failed');
++  } finally { (globalThis as any).fetch = realFetch; await vite.close(); }
++});
++
+ // ------------------------------------------------------------------ real page render
+ t('Timetable page renders the real H-Section sheet (student view)', async () => {
+   const store: Record<string, string> = {};
+diff --git a/tests/api.test.ts b/tests/api.test.ts
+index 19037cd..8d620aa 100644
+--- a/tests/api.test.ts
++++ b/tests/api.test.ts
+@@ -61,7 +61,7 @@ async function main() {
+   const tok: Record<string, string> = { student: S.token, faculty: F.token, admin: A.token, staff: W.token };
+ 
+   section('Health & auth');
+-  await t('health endpoint checks the database', async () => { const r = await get('/api/health'); assert.equal(r.status, 200); assert.equal(r.body.status, 'ok'); assert.equal(r.body.db, 'ok'); });
++  await t('health endpoint checks the database', async () => { const r = await get('/api/health'); assert.equal(r.status, 200); assert.equal(r.body.status, 'ok'); assert.equal(r.body.db, 'ok'); assert.equal(r.body.seeded, true, 'health should say the database is seeded'); });
+   await t('security headers are present (helmet)', async () => {
+     const r = await fetch(`${API}/api/health`);
+     assert.equal(r.headers.get('x-content-type-options'), 'nosniff'); assert.ok(!r.headers.get('x-powered-by'), 'x-powered-by should be hidden');
+diff --git a/tests/logic.test.ts b/tests/logic.test.ts
+index d9e29b2..21c7bb4 100644
+--- a/tests/logic.test.ts
++++ b/tests/logic.test.ts
+@@ -95,7 +95,10 @@ t('upload: stored names cannot escape the uploads folder or use risky types', ()
+ });
+ t('upload: no executable or scriptable types are allowed', () => {
+   for (const mime of Object.keys({ ...IMAGES, ...DOCS })) assert.ok(!/html|javascript|svg|xml$|x-msdownload|php/.test(mime), mime);
+-  assert.ok(LIMIT.image < LIMIT.material);
++  // With STORAGE=db (Vercel) both limits are 3 MB, so "at most" rather than "strictly less"
++  assert.ok(LIMIT.image <= LIMIT.material);
++  // In database mode a base64 upload must fit inside Vercel's 4.5 MB request-body limit
++  if (process.env.STORAGE === 'db' || process.env.VERCEL) assert.ok((LIMIT.material * 4) / 3 < 4.5 * 1024 * 1024, 'upload limit too big for Vercel');
+ });
+ t('complaint photo URL pattern only accepts our own uploads', () => {
+   const src = fs.readFileSync(path.resolve(process.cwd(), 'backend/src/controllers/complaintController.ts'), 'utf8');
